@@ -25,6 +25,7 @@ export class WhatsappToolService
         return tool(
             (input: { to: string; message: string; }) =>
             {
+                console.log("Sending WhatsApp message", input);
                 return this.whatsappService.sendMessage(
                     input.to,
                     input.message
@@ -47,6 +48,7 @@ export class WhatsappToolService
         return tool(async (input: { limit: number; conversationId: string; }) =>
         {
 
+            console.log("Fetching recent WhatsApp messages", input);
             const messages = await MessageModel.find({
                 conversationId: input.conversationId,
                 direction: 'inbound'
@@ -54,6 +56,8 @@ export class WhatsappToolService
                 .sort({ createdAt: -1 })
                 .limit(input.limit)
                 .lean();
+
+            return messages.map(msg => msg.content);
         }, {
             name: "fetch_recent_whatsapp_messages",
             description: "Fetches recent WhatsApp messages from customers.",
@@ -66,16 +70,37 @@ export class WhatsappToolService
 
     getKnowledgeBaseTool()
     {
-        return tool((input: { organizationId: string; topic: string; maxResults: number; }) =>
+        return tool(async (input: { organizationId: string; topic: string; maxResults: number; }) =>
         {
-            return this.knowledgeBaseService.searchSimilar(
-                input.organizationId,
-                input.topic,
-                input.maxResults
-            );
+            try {
+                console.log("Searching WhatsApp knowledge base", input);
+                const results = await this.knowledgeBaseService.searchSimilar(
+                    input.organizationId,
+                    input.topic,
+                    input.maxResults
+                );
+
+                // Convert results to plain text instead of returning objects
+                if (!results || results.length === 0) {
+                    return "No relevant information found in the knowledge base.";
+                }
+
+                // Format the results as a readable string
+                const formattedResults = results.map((result: any, index: number) =>
+                {
+                    return `Document ${index + 1} (Relevance: ${(result.score * 100).toFixed(1)}%):
+${result.content}
+---`;
+                }).join('\n\n');
+
+                return `Found ${results.length} relevant document(s):\n\n${formattedResults}`;
+            } catch (error) {
+                console.error('Error searching knowledge base:', error);
+                return "Sorry, I encountered an error searching the knowledge base.";
+            }
         }, {
             name: "get_whatsapp_knowledge_base",
-            description: "Retrieves knowledge base articles related to WhatsApp messaging.",
+            description: "Retrieves knowledge base information about the organization and what the product/service offers in relation to what the customer is asking about.",
             schema: z.object({
                 organizationId: z.string().describe("The ID of the organization whose knowledge base is to be queried."),
                 topic: z.string().min(1).max(100).describe("The topic to search for in the knowledge base."),

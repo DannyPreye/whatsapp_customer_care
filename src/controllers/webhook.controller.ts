@@ -47,10 +47,15 @@ export async function receiveWhatsApp(req: Request, res: Response)
 
                     const customerProfile = change.value?.contacts?.[ 0 ];
 
+
+                    console.log("This is the customer profile:", customerProfile);
+
+
                     // Find customer by whatsapp id
-                    let customer = await CustomerModel.findOne({ whatsappId: customerProfile?.wa_id, organizationId: organization?._id }).lean();
+                    let customer = await CustomerModel.findOne({ whatsappNumber: customerProfile?.wa_id, }).lean();
 
 
+                    console.log("Found customer:", customer);
 
 
                     // if there's no customer, create one
@@ -69,6 +74,7 @@ export async function receiveWhatsApp(req: Request, res: Response)
 
 
                     }
+                    console.log("Resolved customer:", customer);
                     const messages = change.value?.messages || [];
                     for (const msg of messages) {
                         const from = msg.from; // customer phone
@@ -92,6 +98,8 @@ export async function receiveWhatsApp(req: Request, res: Response)
                             conversationId = (createdDoc as any)._id as string;
                         }
 
+                        console.log("Resolved conversation ID:", conversationId);
+
                         const formatMessagForAi = {
                             conversationId,
                             organization: organization?._id,
@@ -105,7 +113,18 @@ export async function receiveWhatsApp(req: Request, res: Response)
                         };
 
                         const salesAgent = new SalesAgent();
-                        await salesAgent.handleRequest(JSON.stringify(formatMessagForAi));
+                        console.log("Created sales agent instance");
+                        res.on("finish", async () =>
+                        {
+
+                            // console.log("Handling sales agent request", JSON.stringify(formatMessagForAi));
+
+                            try {
+                                await salesAgent.handleRequest(JSON.stringify(formatMessagForAi));
+                            } catch (error) {
+                                console.error("Error handling sales agent request:", error);
+                            }
+                        });
 
                         await MessageModel.create({
                             conversationId,

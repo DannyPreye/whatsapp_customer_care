@@ -12,6 +12,8 @@ export interface AuthPayload
 export function authOptional(req: Request, _res: Response, next: NextFunction): void
 {
     const token = getToken(req);
+
+    console.log("token", token);
     if (!token) return next();
     try {
         const payload = jwt.verify(token, config.env.JWT_SECRET) as AuthPayload;

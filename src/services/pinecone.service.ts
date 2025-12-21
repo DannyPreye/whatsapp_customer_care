@@ -18,7 +18,8 @@ export class VectorStoreService
 
         this.embeddings = new GoogleGenerativeAIEmbeddings({
             apiKey: config.env.GOOGLE_API_KEY,
-            modelName: "embedding-001"
+            modelName: "text-embedding-004",
+
         });
 
         this.indexName = config.env.PINECONE_INDEX_NAME || 'default-index';

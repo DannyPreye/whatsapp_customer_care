@@ -17,7 +17,7 @@ export class SalesAgent
         this.agent = createAgent({
             model: new ChatGoogleGenerativeAI({
                 temperature: 0.7,
-                model: "gemini-2.5-pro",
+                model: "gemini-flash-latest",
 
             }),
             tools: [ this.whatsappToolService.sendMessageTool(), this.whatsappToolService.fetchRecentMessagesTool(), this.whatsappToolService.getKnowledgeBaseTool() ],
@@ -51,9 +51,9 @@ Output: Produce the message content intended for the customer and use tools as r
 
     async handleRequest(input: string)
     {
-        return this.agent.invoke({
+        console.log(await this.agent.invoke({
             messages: [ { role: "user", content: input } ]
-        });
+        }));
     }
 
 

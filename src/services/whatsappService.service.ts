@@ -1,4 +1,5 @@
 import axios from "axios";
+import { config } from "../config";
 
 export class WhatsAppService
 {
@@ -8,12 +9,12 @@ export class WhatsAppService
 
     constructor ()
     {
-        this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN!;
-        this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID!;
+        this.accessToken = config.env.WHATSAPP_TOKEN!;
+        this.phoneNumberId = config.env.WHATSAPP_PHONE_ID!;
         this.apiUrl = `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`;
     }
 
-    async sendMessage(to: string, message: string)
+    async sendMessage(to: string, message: string,)
     {
         try {
             const response = await axios.post(
@@ -33,7 +34,8 @@ export class WhatsAppService
             );
             return response.data;
         } catch (error) {
-            console.error("Error sending WhatsApp message:", error);
+            // @ts-ignore
+            console.error("Error sending WhatsApp message:", error?.response?.data || error.message);
             throw error;
         }
     }
