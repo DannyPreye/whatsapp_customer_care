@@ -3,6 +3,9 @@ import { MessageModel } from '../models/message.model';
 import { ConversationModel } from '../models/conversation.model';
 import { Direction, MessageType, MessageStatus } from '../models/enums';
 import { config } from '../config';
+import { OrganizationModel } from '../models/organization.model';
+import { CustomerModel } from '../models/customer.model';
+import { SalesAgent } from '../services/agents/salesAgenet.agent';
 
 export function verifyWhatsApp(req: Request, res: Response)
 {
@@ -23,17 +26,56 @@ export async function receiveWhatsApp(req: Request, res: Response)
 {
     try {
         const body = req.body as any;
+
+        // console.log("Received WhatsApp webhook", JSON.stringify(body));
         if (body && body.entry) {
             for (const entry of body.entry) {
                 const changes = entry.changes || [];
+
+                console.log("Received WhatsApp changes", JSON.stringify(changes));
+
+
                 for (const change of changes) {
+
+                    // console.log('Processing WhatsApp change', JSON.stringify(change.value));
+
+                    const organizationPhoneId = change.value?.metadata?.phone_number_id;
+
+
+                    // Fetch organization by whatsappPhoneId
+                    const organization = await OrganizationModel.findOne({ whatsappPhoneId: organizationPhoneId }).lean();
+
+                    const customerProfile = change.value?.contacts?.[ 0 ];
+
+                    // Find customer by whatsapp id
+                    let customer = await CustomerModel.findOne({ whatsappId: customerProfile?.wa_id, organizationId: organization?._id }).lean();
+
+
+
+
+                    // if there's no customer, create one
+                    if (!customer && customerProfile) {
+
+
+                        const createdCustomer = await CustomerModel.create({
+                            organizationId: organization?._id,
+                            whatsappNumber: customerProfile.wa_id,
+
+                            name: customerProfile.profile?.name || 'Unknown',
+
+                        } as any);
+
+                        customer = Array.isArray(createdCustomer) ? createdCustomer[ 0 ] : createdCustomer;
+
+
+                    }
                     const messages = change.value?.messages || [];
                     for (const msg of messages) {
                         const from = msg.from; // customer phone
                         const text = msg.text?.body || '';
                         const whatsappId = msg.id;
 
-                        console.log('Received WhatsApp message', { from, text, whatsappId });
+                        // console.log('Received WhatsApp message', { from, text, whatsappId });
 
                         // Resolve conversation by metadata (simplified: find latest conversation by customerId)
                         const conv = await ConversationModel.findOne({ metadata: { from } }).lean();
@@ -41,7 +83,7 @@ export async function receiveWhatsApp(req: Request, res: Response)
                         if (!conversationId) {
                             const created = await ConversationModel.create({
                                 organizationId: process.env.DEFAULT_ORG_ID || 'org-default',
-                                customerId: from,
+                                customerId: customer?._id,
                                 status: 'ACTIVE',
                                 priority: 'MEDIUM',
                                 metadata: { from }
@@ -49,6 +91,21 @@ export async function receiveWhatsApp(req: Request, res: Response)
                             const createdDoc = Array.isArray(created) ? (created as any)[ 0 ] : created;
                             conversationId = (createdDoc as any)._id as string;
                         }
+
+                        const formatMessagForAi = {
+                            conversationId,
+                            organization: organization?._id,
+                            customer: {
+                                id: customer?._id,
+                                name: customer?.name,
+                                whatsappNumber: customer?.whatsappNumber
+                            },
+
+                            customerMessage: text
+                        };
+
+                        const salesAgent = new SalesAgent();
+                        await salesAgent.handleRequest(JSON.stringify(formatMessagForAi));
 
                         await MessageModel.create({
                             conversationId,

@@ -1,9 +1,20 @@
 import { DocumentModel, DocumentEntity } from '../models/document.model';
 import { DocumentChunkModel } from '../models/document-chunk.model';
 import { ProcessStatus, DocumentType } from '../models/enums';
+import { VectorStoreService } from './pinecone.service';
+import { DocumentProcessorService } from './documentProcessor.service';
+
 
 export class DocumentsService
 {
+    private documentProcessorService: DocumentProcessorService;
+    private vectorStoreService: VectorStoreService;
+
+    constructor ()
+    {
+        this.documentProcessorService = new DocumentProcessorService();
+        this.vectorStoreService = new VectorStoreService();
+    }
     async list(): Promise<DocumentEntity[]>
     {
         return DocumentModel.find().lean();
@@ -14,10 +25,27 @@ export class DocumentsService
         return DocumentModel.findById(id).lean();
     }
 
+    async searchKnowledgeBase(
+        organizationId: string,
+        query: string,
+        topK: number = 5,
+        filters?: Record<string, any>
+    )
+    {
+        return await this.vectorStoreService.searchSimilar(
+            organizationId,
+            query,
+            topK,
+            filters
+        );
+    }
+
     async remove(id: string): Promise<boolean>
     {
         const doc = await DocumentModel.findByIdAndDelete(id);
         if (!doc) return false;
+
+        await this.vectorStoreService.deleteDocument(doc.organizationId, id);
         await DocumentChunkModel.deleteMany({ documentId: id });
         return true;
     }
@@ -34,34 +62,58 @@ export class DocumentsService
         content?: string;
     }): Promise<DocumentEntity>
     {
-        const created = await DocumentModel.create({
-            organizationId: input.organizationId,
-            name: input.name,
-            originalName: input.originalName,
-            type: input.type,
-            fileUrl: input.fileUrl,
-            fileSize: input.fileSize,
-            mimeType: input.mimeType,
-            uploadedBy: input.uploadedBy,
-            status: ProcessStatus.PENDING
-        });
+        try {
+            const created = await DocumentModel.create({
+                organizationId: input.organizationId,
+                name: input.name,
+                originalName: input.originalName,
+                type: input.type,
+                fileUrl: input.fileUrl,
+                fileSize: input.fileSize,
+                mimeType: input.mimeType,
+                uploadedBy: input.uploadedBy,
+                status: ProcessStatus.PENDING
+            });
 
-        if (input.content) {
-            const chunkSize = 1000;
-            const chunks = [] as Array<{ content: string; chunkIndex: number; vectorId: string; }>;
-            for (let i = 0; i < input.content.length; i += chunkSize) {
-                chunks.push({
-                    content: input.content.slice(i, i + chunkSize),
-                    chunkIndex: Math.floor(i / chunkSize),
-                    vectorId: ''
-                });
-            }
-            await DocumentChunkModel.insertMany(
-                chunks.map((c) => ({ documentId: created._id, content: c.content, chunkIndex: c.chunkIndex, vectorId: c.vectorId }))
+            const processedDocument = await this.documentProcessorService.processDocument(
+                input.fileUrl,
+                input.type,
+                created._id.toString(),
+                input.name
             );
-        }
 
-        return created.toJSON() as any;
+            // Store in Vector Store
+            const vectorIds = await this.vectorStoreService.addDocument(
+                input.organizationId,
+                created._id.toString(),
+                processedDocument.chunks
+            );
+
+            await DocumentChunkModel.insertMany(
+                processedDocument.chunks.map((c, index) => ({
+                    documentId: created._id,
+                    content: c.content,
+                    chunkIndex: c.chunkIndex,
+                    vectorId: vectorIds[ index ]
+                }))
+            );
+
+            await DocumentModel.findByIdAndUpdate(created._id, {
+                status: ProcessStatus.COMPLETED,
+                processedAt: new Date()
+            });
+
+
+
+            return created.toJSON() as any;
+        } catch (error) {
+
+            await DocumentModel.findByIdAndUpdate(input.organizationId, {
+                status: ProcessStatus.FAILED,
+                processedAt: new Date()
+            });
+            throw error;
+        }
     }
 
     async bulkUpload(items: Array<any>)

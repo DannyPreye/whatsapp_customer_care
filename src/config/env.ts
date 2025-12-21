@@ -22,6 +22,9 @@ export type AppEnv = {
     WHATSAPP_BUSINESS_ID?: string;
     WHATSAPP_PHONE_ID?: string;
     WHATSAPP_TOKEN?: string;
+    PINECONE_API_KEY?: string;
+    PINECONE_INDEX_NAME?: string;
+    GOOGLE_API_KEY: string;
 };
 
 function getEnv(): AppEnv
@@ -46,6 +49,9 @@ function getEnv(): AppEnv
         WHATSAPP_BUSINESS_ID: process.env.WHATSAPP_BUSINESS_ID,
         WHATSAPP_PHONE_ID: process.env.WHATSAPP_PHONE_ID,
         WHATSAPP_TOKEN: process.env.WHATSAPP_TOKEN,
+        PINECONE_API_KEY: process.env.PINECONE_API_KEY,
+        PINECONE_INDEX_NAME: process.env.PINECONE_INDEX_NAME,
+        GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || ''
 
     };
 }
