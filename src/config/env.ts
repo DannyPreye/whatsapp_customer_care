@@ -25,6 +25,8 @@ export type AppEnv = {
     PINECONE_API_KEY?: string;
     PINECONE_INDEX_NAME?: string;
     GOOGLE_API_KEY: string;
+    FOLLOWUP_WORKER_ENABLED?: string; // 'true' | 'false'
+    FOLLOWUP_WORKER_INTERVAL_MS?: string; // milliseconds
 };
 
 function getEnv(): AppEnv
@@ -52,6 +54,9 @@ function getEnv(): AppEnv
         PINECONE_API_KEY: process.env.PINECONE_API_KEY,
         PINECONE_INDEX_NAME: process.env.PINECONE_INDEX_NAME,
         GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || ''
+        ,
+        FOLLOWUP_WORKER_ENABLED: process.env.FOLLOWUP_WORKER_ENABLED,
+        FOLLOWUP_WORKER_INTERVAL_MS: process.env.FOLLOWUP_WORKER_INTERVAL_MS
 
     };
 }

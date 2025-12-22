@@ -48,3 +48,17 @@ export async function updateSettings(req: Request, res: Response)
     if (!settings) return res.status(404).json({ error: 'Organization not found' });
     ok(res, settings);
 }
+
+export async function getAgentSettings(req: Request, res: Response)
+{
+    const settings = await orgService.getAgentSettings(req.params.id);
+    if (!settings) return res.status(404).json({ error: 'Organization not found' });
+    ok(res, settings);
+}
+
+export async function updateAgentSettings(req: Request, res: Response)
+{
+    const settings = await orgService.updateAgentSettings(req.params.id, req.body);
+    if (!settings) return res.status(404).json({ error: 'Organization not found' });
+    ok(res, settings);
+}

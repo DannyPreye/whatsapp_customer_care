@@ -1,4 +1,4 @@
-import { OrganizationModel, Organization } from '../models/organization.model';
+import { OrganizationModel, Organization, AgentSettings } from '../models/organization.model';
 
 export async function listOrganizations(): Promise<Organization[]>
 {
@@ -16,7 +16,8 @@ export async function createOrganization(input: Partial<Organization> & { name: 
         whatsappToken: input.whatsappToken,
         whatsappBusinessId: input.whatsappBusinessId,
         isActive: input.isActive,
-        settings: input.settings
+        settings: input.settings,
+        agentSettings: input.agentSettings
     } as any);
     return org.save();
 }
@@ -47,4 +48,20 @@ export async function updateSettings(id: string, settings: Record<string, unknow
 {
     const org = await OrganizationModel.findByIdAndUpdate(id, { settings }, { new: true, projection: { settings: 1 } }).lean();
     return org ? (org as any).settings || {} : null;
+}
+
+export async function getAgentSettings(id: string): Promise<AgentSettings | null>
+{
+    const org = await OrganizationModel.findById(id, { agentSettings: 1 }).lean();
+    return org ? (org as any).agentSettings || null : null;
+}
+
+export async function updateAgentSettings(id: string, agentSettings: AgentSettings): Promise<AgentSettings | null>
+{
+    const org = await OrganizationModel.findByIdAndUpdate(
+        id,
+        { agentSettings },
+        { new: true, projection: { agentSettings: 1 } }
+    ).lean();
+    return org ? (org as any).agentSettings || null : null;
 }

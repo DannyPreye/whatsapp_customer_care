@@ -12,6 +12,12 @@ export interface Customer extends Document<string>
     metadata: Record<string, unknown>;
     tags: string[];
     isBlocked: boolean;
+    lifecycleStage?: 'unknown' | 'lead' | 'prospect' | 'customer' | 'churnRisk';
+    prospectScore?: number;
+    nextFollowUpAt?: Date;
+    followUpNotes?: string;
+    lastFollowUpSentAt?: Date;
+    followUpSentCount?: number;
     createdAt: Date;
     updatedAt: Date;
     lastSeenAt?: Date;
@@ -27,7 +33,13 @@ const CustomerSchema = new Schema<any>(
         language: { type: String, default: 'en' },
         metadata: { type: Schema.Types.Mixed, default: {} },
         tags: { type: [ String ], default: [] },
-        isBlocked: { type: Boolean, default: false }
+        isBlocked: { type: Boolean, default: false },
+        lifecycleStage: { type: String, enum: [ 'unknown', 'lead', 'prospect', 'customer', 'churnRisk' ], default: 'unknown' },
+        prospectScore: { type: Number, min: 0, max: 1, default: 0 },
+        nextFollowUpAt: { type: Date },
+        followUpNotes: { type: String },
+        lastFollowUpSentAt: { type: Date },
+        followUpSentCount: { type: Number, default: 0 }
     },
     { timestamps: true }
 );

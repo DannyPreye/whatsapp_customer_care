@@ -50,10 +50,32 @@ const definition: OpenAPIV3.Document = {
                     whatsappBusinessId: { type: 'string', nullable: true },
                     isActive: { type: 'boolean' },
                     settings: { type: 'object', additionalProperties: true },
+                    agentSettings: { $ref: '#/components/schemas/AgentSettings' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' }
                 },
                 required: [ 'id', 'name', 'isActive' ]
+            },
+            AgentEscalationSettings: {
+                type: 'object',
+                properties: {
+                    enabled: { type: 'boolean' },
+                    rules: { type: 'array', items: { type: 'string' } },
+                    phone: { type: 'string', nullable: true }
+                },
+                required: [ 'enabled' ]
+            },
+            AgentSettings: {
+                type: 'object',
+                properties: {
+                    systemPrompt: { type: 'string' },
+                    tone: { type: 'string', enum: [ 'concise', 'friendly', 'formal', 'playful' ] },
+                    maxReplyLength: { type: 'number' },
+                    signature: { type: 'string' },
+                    callToAction: { type: 'string' },
+                    followUpEnabled: { type: 'boolean' },
+                    escalation: { $ref: '#/components/schemas/AgentEscalationSettings' }
+                }
             },
             Tokens: {
                 type: 'object',
@@ -107,7 +129,8 @@ const definition: OpenAPIV3.Document = {
                     whatsappToken: { type: 'string' },
                     whatsappBusinessId: { type: 'string' },
                     isActive: { type: 'boolean' },
-                    settings: { type: 'object', additionalProperties: true }
+                    settings: { type: 'object', additionalProperties: true },
+                    agentSettings: { $ref: '#/components/schemas/AgentSettings' }
                 },
                 required: [ 'name' ]
             },
@@ -443,6 +466,34 @@ const definition: OpenAPIV3.Document = {
                 tags: [ 'Organizations' ],
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
                 responses: { 204: { description: 'Deleted' }, 404: { description: 'Not found' } }
+            }
+        },
+        '/api/v1/organizations/{id}/agent-settings': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Get organization agent settings',
+                parameters: [ { in: 'path', name: 'id', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: { description: 'Agent settings', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AgentSettings' } } } } } },
+                    404: { description: 'Not found' }
+                }
+            },
+            put: {
+                tags: [ 'Organizations' ],
+                summary: 'Update organization agent settings',
+                parameters: [ { in: 'path', name: 'id', required: true, schema: { type: 'string' } } ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: { $ref: '#/components/schemas/AgentSettings' }
+                        }
+                    }
+                },
+                responses: {
+                    200: { description: 'Agent settings updated', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AgentSettings' } } } } } },
+                    404: { description: 'Not found' }
+                }
             }
         },
         '/api/v1/organizations/{id}/settings': {

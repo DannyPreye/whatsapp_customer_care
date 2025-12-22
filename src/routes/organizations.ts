@@ -17,6 +17,20 @@ const baseSchema = z.object({
     settings: z.record(z.string(), z.any()).optional()
 });
 
+const agentSettingsSchema = z.object({
+    systemPrompt: z.string().max(4000).optional(),
+    tone: z.enum([ 'concise', 'friendly', 'formal', 'playful' ]).optional(),
+    maxReplyLength: z.number().min(20).max(400).optional(),
+    signature: z.string().max(500).optional(),
+    callToAction: z.string().max(500).optional(),
+    followUpEnabled: z.boolean().optional(),
+    escalation: z.object({
+        enabled: z.boolean(),
+        rules: z.array(z.string().max(300)).max(20).optional(),
+        phone: z.string().max(30).optional()
+    }).optional()
+});
+
 const updateSchema = baseSchema.partial();
 
 router.get('/', orgController.list);
@@ -26,5 +40,7 @@ router.put('/:id', validate(updateSchema), orgController.update);
 router.delete('/:id', orgController.remove);
 router.get('/:id/settings', orgController.getSettings);
 router.put('/:id/settings', validate(z.record(z.string(), z.any())), orgController.updateSettings);
+router.get('/:id/agent-settings', orgController.getAgentSettings);
+router.put('/:id/agent-settings', validate(agentSettingsSchema), orgController.updateAgentSettings);
 
 export default router;

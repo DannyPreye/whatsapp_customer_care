@@ -13,8 +13,27 @@ export interface Organization extends Document<string>
     whatsappBusinessId?: string;
     isActive: boolean;
     settings: Record<string, unknown>;
+    agentSettings?: AgentSettings;
     createdAt: Date;
     updatedAt: Date;
+}
+
+export interface AgentEscalationSettings
+{
+    enabled: boolean;
+    rules?: string[];
+    phone?: string;
+}
+
+export interface AgentSettings
+{
+    systemPrompt?: string;
+    tone?: 'concise' | 'friendly' | 'formal' | 'playful';
+    maxReplyLength?: number; // words
+    signature?: string;
+    callToAction?: string;
+    escalation?: AgentEscalationSettings;
+    followUpEnabled?: boolean;
 }
 
 const OrganizationSchema = new Schema<any>(
@@ -28,7 +47,31 @@ const OrganizationSchema = new Schema<any>(
         whatsappToken: { type: String },
         whatsappBusinessId: { type: String },
         isActive: { type: Boolean, default: true },
-        settings: { type: Schema.Types.Mixed, default: {} }
+        settings: { type: Schema.Types.Mixed, default: {} },
+        agentSettings: {
+            type: {
+                systemPrompt: { type: String, trim: true },
+                tone: { type: String, enum: [ 'concise', 'friendly', 'formal', 'playful' ], default: 'concise' },
+                maxReplyLength: { type: Number, default: 120 },
+                signature: { type: String, trim: true },
+                callToAction: { type: String, trim: true },
+                followUpEnabled: { type: Boolean, default: true },
+                escalation: {
+                    type: {
+                        enabled: { type: Boolean, default: false },
+                        rules: { type: [ String ], default: [] },
+                        phone: { type: String, trim: true }
+                    },
+                    default: { enabled: false }
+                }
+            },
+            default: {
+                tone: 'concise',
+                maxReplyLength: 120,
+                followUpEnabled: true,
+                escalation: { enabled: false }
+            }
+        }
     },
     { timestamps: true }
 );

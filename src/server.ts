@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { config } from './config';
 import { logger } from './logger';
 import { connectMongo, disconnectMongo } from './db/mongo';
+import { FollowUpWorker } from './services/workers/followup.worker';
 
 async function main()
 {
@@ -14,10 +15,15 @@ async function main()
         logger.info(`Server listening on port ${config.env.PORT}`);
     });
 
+    // Start follow-up worker
+    const followUpWorker = new FollowUpWorker();
+    followUpWorker.start();
+
     const shutdown = async () =>
     {
         try {
             logger.info('Shutting down');
+            followUpWorker.stop();
             await disconnectMongo();
             server.close(() =>
             {
