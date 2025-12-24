@@ -9,6 +9,7 @@ import { DocumentProcessorService } from "../../documentProcessor.service";
 import { VectorStoreService } from "../../pinecone.service";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { config } from "../../../config";
+import { Direction, MessageStatus, MessageType } from "../../../models/enums";
 
 
 export class WhatsappToolService
@@ -36,13 +37,66 @@ export class WhatsappToolService
             },
             {
                 name: "send_whatsapp_message",
-                description: "Sends a WhatsApp message to a specified phone number.",
+                description: "Sends a WhatsApp message to a specified phone number. Always use this tool to send messages.",
                 schema: z.object({
                     to: z.string().min(10).max(15).describe("The recipient's phone number in international format."),
                     message: z.string().min(1).max(4096).describe("The content of the WhatsApp message to be sent.")
                 })
             }
         );
+    }
+
+    /**
+     * Persist an outbound AI/agent message to the same conversation
+     * so the history remains complete even for tool-sent replies.
+     */
+    saveSentMessageTool()
+    {
+        return tool(async (input: {
+            conversationId: string;
+            content: string;
+            aiConfidence?: number;
+            whatsappId?: string;
+            metadata?: Record<string, any>;
+        }) =>
+        {
+            console.log("Saving outbound AI message", input);
+
+            const message = await MessageModel.create({
+                conversationId: input.conversationId,
+                whatsappId: input.whatsappId,
+                direction: Direction.OUTBOUND,
+                type: MessageType.TEXT,
+                content: input.content,
+                metadata: input.metadata ?? {},
+                status: MessageStatus.SENT,
+                isFromAgent: true,
+                aiGenerated: true,
+                confidence: input.aiConfidence
+            } as any);
+
+            // Keep conversation freshness up to date
+            await ConversationModel.updateOne(
+                { _id: input.conversationId },
+                { $set: { lastMessageAt: new Date() } }
+            );
+
+            return {
+                id: (message as any)._id,
+                conversationId: input.conversationId,
+                status: "saved"
+            };
+        }, {
+            name: "save_sent_whatsapp_message",
+            description: "Save the AI/agent's sent message into the same conversation as an OUTBOUND text.",
+            schema: z.object({
+                conversationId: z.string().describe("The target conversation id to append the message to."),
+                content: z.string().min(1).max(4096).describe("The text content that was sent to the user."),
+                aiConfidence: z.number().min(0).max(1).optional().describe("Optional confidence score from the AI for this reply."),
+                whatsappId: z.string().optional().describe("Optional underlying WhatsApp provider message id, if available."),
+                metadata: z.record(z.string(), z.any()).optional().describe("Optional extra metadata to store with the message.")
+            })
+        });
     }
 
     fetchRecentMessagesTool()

@@ -7,6 +7,7 @@ const router = Router();
 
 const baseSchema = z.object({
     name: z.string().min(1),
+    ownerId: z.string().min(1),
     description: z.string().optional(),
     industry: z.string().optional(),
     website: z.string().url().optional(),

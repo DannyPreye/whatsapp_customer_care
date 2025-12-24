@@ -5,7 +5,7 @@ export async function listOrganizations(): Promise<Organization[]>
     return OrganizationModel.find().limit(200).lean();
 }
 
-export async function createOrganization(input: Partial<Organization> & { name: string; }): Promise<Organization>
+export async function createOrganization(input: Partial<Organization> & { name: string; ownerId: string; }): Promise<Organization>
 {
     const org = new OrganizationModel({
         name: input.name,
@@ -17,6 +17,7 @@ export async function createOrganization(input: Partial<Organization> & { name: 
         whatsappBusinessId: input.whatsappBusinessId,
         isActive: input.isActive,
         settings: input.settings,
+        ownerId: input.ownerId,
         agentSettings: input.agentSettings
     } as any);
     return org.save();

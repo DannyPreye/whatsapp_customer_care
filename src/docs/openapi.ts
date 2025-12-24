@@ -49,12 +49,13 @@ const definition: OpenAPIV3.Document = {
                     whatsappToken: { type: 'string', nullable: true },
                     whatsappBusinessId: { type: 'string', nullable: true },
                     isActive: { type: 'boolean' },
+                    ownerId: { type: 'string' },
                     settings: { type: 'object', additionalProperties: true },
                     agentSettings: { $ref: '#/components/schemas/AgentSettings' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' }
                 },
-                required: [ 'id', 'name', 'isActive' ]
+                required: [ 'id', 'name', 'isActive', 'ownerId' ]
             },
             AgentEscalationSettings: {
                 type: 'object',
@@ -122,6 +123,7 @@ const definition: OpenAPIV3.Document = {
                 type: 'object',
                 properties: {
                     name: { type: 'string' },
+                    ownerId: { type: 'string' },
                     description: { type: 'string' },
                     industry: { type: 'string' },
                     website: { type: 'string' },
@@ -132,7 +134,7 @@ const definition: OpenAPIV3.Document = {
                     settings: { type: 'object', additionalProperties: true },
                     agentSettings: { $ref: '#/components/schemas/AgentSettings' }
                 },
-                required: [ 'name' ]
+                required: [ 'name', 'ownerId' ]
             },
             UpdateOrganizationInput: { $ref: '#/components/schemas/CreateOrganizationInput' },
             CreateUserInput: {

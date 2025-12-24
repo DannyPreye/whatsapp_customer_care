@@ -3,6 +3,7 @@ import { createAgent } from "langchain";
 import { WhatsappToolService } from "./tools/whatsapp";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import * as orgService from "../organizations.service";
+import { ChatOpenAI } from "@langchain/openai";
 export class SalesAgent
 {
 
@@ -41,6 +42,8 @@ Rules:
             `Tone: ${tone}.`,
             `Keep responses concise (<=${maxWords} words), professional, and helpful.`,
             'Use tools for recent context and knowledge base facts before answering.',
+            `Always make sure to send a message that moves the sale forward`,
+            "Always use the whatsapp tool to send messages, and always send back a response",
             custom,
             callToAction,
             escalation,
@@ -50,10 +53,12 @@ Rules:
 
     private createAgent(systemPrompt: string)
     {
+        console.log("Creating agent with system prompt:", systemPrompt);
         return createAgent({
-            model: new ChatGoogleGenerativeAI({
+            model: new ChatOpenAI({
                 temperature: 0.7,
-                model: "gemini-flash-latest",
+                model: "gpt-4o-mini",
+
             }),
             tools: [
                 this.whatsappToolService.sendMessageTool(),
@@ -62,7 +67,8 @@ Rules:
                 this.whatsappToolService.getCustomerTool(),
                 this.whatsappToolService.updateCustomerTool(),
                 this.whatsappToolService.assessProspectTool(),
-                this.whatsappToolService.scheduleFollowUpTool()
+                this.whatsappToolService.scheduleFollowUpTool(),
+                this.whatsappToolService.saveSentMessageTool()
             ],
             name: "sales-agent",
             description: "An AI agent that helps sales representatives engage with customers via WhatsApp messages.",
@@ -85,9 +91,13 @@ Rules:
         const systemPrompt = this.buildSystemPrompt(agentSettings || {});
         const agent = this.createAgent(systemPrompt);
 
-        console.log(await agent.invoke({
+        const response = await agent.invoke({
             messages: [ { role: "user", content: input } ]
-        }));
+        });
+
+        console.log("This is the response", response.messages[ 0 ].content);
+
+        return response.messages[ 0 ].content;
     }
 
 

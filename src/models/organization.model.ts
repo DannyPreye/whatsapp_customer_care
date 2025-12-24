@@ -14,6 +14,7 @@ export interface Organization extends Document<string>
     isActive: boolean;
     settings: Record<string, unknown>;
     agentSettings?: AgentSettings;
+    ownerId: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -48,6 +49,7 @@ const OrganizationSchema = new Schema<any>(
         whatsappBusinessId: { type: String },
         isActive: { type: Boolean, default: true },
         settings: { type: Schema.Types.Mixed, default: {} },
+        ownerId: { type: String, required: true, ref: 'User' },
         agentSettings: {
             type: {
                 systemPrompt: { type: String, trim: true },
