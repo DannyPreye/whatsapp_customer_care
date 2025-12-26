@@ -1,17 +1,20 @@
+import { BaileysManager, baileysManager } from './baileysManager.service';
 import axios from "axios";
 import { config } from "../config";
+
 
 export class WhatsAppService
 {
     private apiUrl: string;
     private accessToken: string;
     private phoneNumberId: string;
-
+    private baileysManager: BaileysManager;
     constructor ()
     {
         this.accessToken = config.env.WHATSAPP_TOKEN!;
         this.phoneNumberId = config.env.WHATSAPP_PHONE_ID!;
         this.apiUrl = `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`;
+        this.baileysManager = new BaileysManager();
     }
 
     async sendMessage(to: string, message: string,)

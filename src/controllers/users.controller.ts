@@ -55,3 +55,11 @@ export async function updateRole(req: Request, res: Response)
     if (!user) return res.status(404).json({ error: 'User not found' });
     ok(res, user);
 }
+
+export async function getDependencies(req: Request, res: Response)
+{
+    const { id } = req.params as { id: string; };
+    const dependencies = await usersService.getUserDependencies(id);
+    if (!dependencies) return res.status(404).json({ error: 'User not found' });
+    ok(res, dependencies);
+}

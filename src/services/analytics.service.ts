@@ -1,10 +1,30 @@
 import { ConversationMetricsModel } from '../models/conversation-metrics.model';
 
+export interface AnalyticsQuery
+{
+    organizationId: string;
+    startDate?: Date;
+    endDate?: Date;
+}
+
+function buildDateMatch(query: AnalyticsQuery)
+{
+    const date: Record<string, Date> = {};
+    if (query.startDate) date.$gte = query.startDate;
+    if (query.endDate) date.$lte = query.endDate;
+    return Object.keys(date).length ? date : undefined;
+}
+
 export class AnalyticsService
 {
-    async overview()
+    async overview(query: AnalyticsQuery)
     {
+        const match: any = { organizationId: query.organizationId };
+        const date = buildDateMatch(query);
+        if (date) match.date = date;
+
         const agg = await ConversationMetricsModel.aggregate([
+            { $match: match },
             {
                 $group: {
                     _id: null,
@@ -20,34 +40,50 @@ export class AnalyticsService
         return agg[ 0 ] || {};
     }
 
-    async conversations()
+    async conversations(query: AnalyticsQuery)
     {
-        return ConversationMetricsModel.find({}, { date: 1, totalConversations: 1, resolvedByAI: 1, handedOffToHuman: 1 })
+        const match: any = { organizationId: query.organizationId };
+        const date = buildDateMatch(query);
+        if (date) match.date = date;
+
+        return ConversationMetricsModel.find(match, { date: 1, totalConversations: 1, resolvedByAI: 1, handedOffToHuman: 1 })
             .sort({ date: 1 })
             .lean();
     }
 
-    async performance()
+    async performance(query: AnalyticsQuery)
     {
-        return ConversationMetricsModel.find({}, { date: 1, averageResponseTime: 1, averageResolutionTime: 1 })
+        const match: any = { organizationId: query.organizationId };
+        const date = buildDateMatch(query);
+        if (date) match.date = date;
+
+        return ConversationMetricsModel.find(match, { date: 1, averageResponseTime: 1, averageResolutionTime: 1 })
             .sort({ date: 1 })
             .lean();
     }
 
-    async customerSatisfaction()
+    async customerSatisfaction(query: AnalyticsQuery)
     {
-        return ConversationMetricsModel.find({}, { date: 1, customerSatisfaction: 1 }).sort({ date: 1 }).lean();
+        const match: any = { organizationId: query.organizationId };
+        const date = buildDateMatch(query);
+        if (date) match.date = date;
+
+        return ConversationMetricsModel.find(match, { date: 1, customerSatisfaction: 1 }).sort({ date: 1 }).lean();
     }
 
-    async agentPerformance()
+    async agentPerformance(query: AnalyticsQuery)
     {
-        // Placeholder: without per-agent metrics, return overall performance
-        return this.performance();
+        // Placeholder: without per-agent metrics, reuse performance filtered by organization/date
+        return this.performance(query);
     }
 
-    async exportCSV()
+    async exportCSV(query: AnalyticsQuery)
     {
-        const rows = await ConversationMetricsModel.find().sort({ date: 1 }).lean();
+        const match: any = { organizationId: query.organizationId };
+        const date = buildDateMatch(query);
+        if (date) match.date = date;
+
+        const rows = await ConversationMetricsModel.find(match).sort({ date: 1 }).lean();
         const header = [
             'date',
             'totalConversations',

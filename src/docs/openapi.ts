@@ -154,6 +154,24 @@ const definition: OpenAPIV3.Document = {
                 type: 'object',
                 properties: { role: { $ref: '#/components/schemas/UserRole' } },
                 required: [ 'role' ]
+            },
+            OrgUserRole: { type: 'string', enum: [ 'OWNER', 'ADMIN', 'AGENT', 'VIEWER' ] },
+            UserDependenciesOrganization: {
+                type: 'object',
+                properties: {
+                    organization: { $ref: '#/components/schemas/Organization' },
+                    role: { $ref: '#/components/schemas/OrgUserRole' },
+                    relation: { type: 'string', enum: [ 'OWNER', 'MEMBER' ] }
+                },
+                required: [ 'organization', 'role', 'relation' ]
+            },
+            UserDependencies: {
+                type: 'object',
+                properties: {
+                    user: { $ref: '#/components/schemas/User' },
+                    organizations: { type: 'array', items: { $ref: '#/components/schemas/UserDependenciesOrganization' } }
+                },
+                required: [ 'user', 'organizations' ]
             }
             ,
             Customer: {
@@ -242,6 +260,44 @@ const definition: OpenAPIV3.Document = {
                     isActive: { type: 'boolean' }
                 },
                 required: [ 'organizationId', 'type', 'name' ]
+            },
+            AnalyticsOverview: {
+                type: 'object',
+                properties: {
+                    totalConversations: { type: 'number' },
+                    resolvedByAI: { type: 'number' },
+                    handedOffToHuman: { type: 'number' },
+                    avgResponse: { type: 'number' },
+                    avgResolution: { type: 'number' },
+                    avgCSAT: { type: 'number' }
+                }
+            },
+            AnalyticsConversationPoint: {
+                type: 'object',
+                properties: {
+                    date: { type: 'string', format: 'date-time' },
+                    totalConversations: { type: 'number' },
+                    resolvedByAI: { type: 'number' },
+                    handedOffToHuman: { type: 'number' }
+                },
+                required: [ 'date' ]
+            },
+            AnalyticsPerformancePoint: {
+                type: 'object',
+                properties: {
+                    date: { type: 'string', format: 'date-time' },
+                    averageResponseTime: { type: 'number' },
+                    averageResolutionTime: { type: 'number' }
+                },
+                required: [ 'date' ]
+            },
+            AnalyticsCSATPoint: {
+                type: 'object',
+                properties: {
+                    date: { type: 'string', format: 'date-time' },
+                    customerSatisfaction: { type: 'number' }
+                },
+                required: [ 'date' ]
             }
         }
     },
@@ -519,6 +575,44 @@ const definition: OpenAPIV3.Document = {
                 }
             }
         },
+        '/api/v1/organizations/{id}/connect-whatsapp': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Initiate Meta/WhatsApp OAuth flow for organization',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'OAuth URL to redirect the user',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: { data: { type: 'object', properties: { url: { type: 'string' } } } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        '/api/v1/organizations/oauth/meta/callback': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Callback endpoint for Meta OAuth (exchanges code for token and stores IDs)',
+                parameters: [
+                    { name: 'code', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'state', in: 'query', required: true, schema: { type: 'string' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Success',
+                        content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { success: { type: 'boolean' } } } } } } }
+                    },
+                    400: { description: 'Invalid request or state' },
+                    500: { description: 'Server error' }
+                }
+            }
+        },
         '/api/v1/users': {
             get: {
                 tags: [ 'Users' ],
@@ -564,6 +658,25 @@ const definition: OpenAPIV3.Document = {
                 summary: 'Delete user',
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
                 responses: { 204: { description: 'Deleted' }, 404: { description: 'Not found' } }
+            }
+        },
+        '/api/v1/users/{id}/dependencies': {
+            get: {
+                tags: [ 'Users' ],
+                summary: 'Get user dependencies (organizations and roles)',
+                security: [ { bearerAuth: [] } ],
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'User dependencies',
+                        content: {
+                            'application/json': {
+                                schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/UserDependencies' } } }
+                            }
+                        }
+                    },
+                    404: { description: 'Not found' }
+                }
             }
         },
         '/api/v1/users/{id}/role': {
@@ -764,22 +877,134 @@ const definition: OpenAPIV3.Document = {
             post: { tags: [ 'Webhooks' ], summary: 'WhatsApp webhook events', responses: { 200: { description: 'Received' } } }
         },
         '/api/v1/analytics/overview': {
-            get: { tags: [ 'Analytics' ], summary: 'Overview metrics', responses: { 200: { description: 'Overview', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object' } } } } } } } }
+            get: {
+                tags: [ 'Analytics' ],
+                summary: 'Overview metrics',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Overview',
+                        content: {
+                            'application/json': {
+                                schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AnalyticsOverview' } } }
+                            }
+                        }
+                    }
+                }
+            }
         },
         '/api/v1/analytics/conversations': {
-            get: { tags: [ 'Analytics' ], summary: 'Conversations metrics', responses: { 200: { description: 'Timeseries', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } } } } } }
+            get: {
+                tags: [ 'Analytics' ],
+                summary: 'Conversations metrics',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Timeseries',
+                        content: {
+                            'application/json': {
+                                schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/AnalyticsConversationPoint' } } } }
+                            }
+                        }
+                    }
+                }
+            }
         },
         '/api/v1/analytics/performance': {
-            get: { tags: [ 'Analytics' ], summary: 'Performance metrics', responses: { 200: { description: 'Timeseries', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } } } } } }
+            get: {
+                tags: [ 'Analytics' ],
+                summary: 'Performance metrics',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Timeseries',
+                        content: {
+                            'application/json': {
+                                schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/AnalyticsPerformancePoint' } } } }
+                            }
+                        }
+                    }
+                }
+            }
         },
         '/api/v1/analytics/customer-satisfaction': {
-            get: { tags: [ 'Analytics' ], summary: 'Customer satisfaction metrics', responses: { 200: { description: 'Timeseries', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } } } } } }
+            get: {
+                tags: [ 'Analytics' ],
+                summary: 'Customer satisfaction metrics',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Timeseries',
+                        content: {
+                            'application/json': {
+                                schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/AnalyticsCSATPoint' } } } }
+                            }
+                        }
+                    }
+                }
+            }
         },
         '/api/v1/analytics/agent-performance': {
-            get: { tags: [ 'Analytics' ], summary: 'Agent performance metrics', responses: { 200: { description: 'Timeseries', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } } } } } }
+            get: {
+                tags: [ 'Analytics' ],
+                summary: 'Agent performance metrics',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Timeseries',
+                        content: {
+                            'application/json': {
+                                schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/AnalyticsPerformancePoint' } } } }
+                            }
+                        }
+                    }
+                }
+            }
         },
         '/api/v1/analytics/export': {
-            get: { tags: [ 'Analytics' ], summary: 'Export CSV', responses: { 200: { description: 'CSV' } } }
+            get: {
+                tags: [ 'Analytics' ],
+                summary: 'Export CSV',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'CSV export',
+                        content: {
+                            'text/csv': { schema: { type: 'string' } }
+                        }
+                    }
+                }
+            }
         }
     }
 };

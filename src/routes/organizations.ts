@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import * as orgController from '../controllers/organizations.controller';
 import { validate } from '../middlewares/validate';
+import { authRequired } from '../middlewares/auth';
 import { z } from 'zod';
 
 const router = Router();
+router.use(authRequired);
 
 const baseSchema = z.object({
     name: z.string().min(1),
@@ -39,6 +41,8 @@ router.post('/', validate(baseSchema), orgController.create);
 router.get('/:id', orgController.getById);
 router.put('/:id', validate(updateSchema), orgController.update);
 router.delete('/:id', orgController.remove);
+router.get('/:id/connect-whatsapp', orgController.connectWhatsApp);
+router.get('/oauth/meta/callback', orgController.handleWhatsAppCallback);
 router.get('/:id/settings', orgController.getSettings);
 router.put('/:id/settings', validate(z.record(z.string(), z.any())), orgController.updateSettings);
 router.get('/:id/agent-settings', orgController.getAgentSettings);

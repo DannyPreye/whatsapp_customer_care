@@ -1,4 +1,5 @@
 import { OrganizationModel, Organization, AgentSettings } from '../models/organization.model';
+import { baileysManager } from './baileysManager.service';
 
 export async function listOrganizations(): Promise<Organization[]>
 {
@@ -65,4 +66,43 @@ export async function updateAgentSettings(id: string, agentSettings: AgentSettin
         { new: true, projection: { agentSettings: 1 } }
     ).lean();
     return org ? (org as any).agentSettings || null : null;
+}
+
+
+export async function connectWhatsApp(organizationId: string): Promise<void>
+{
+    const org = await OrganizationModel.findById(organizationId).lean();
+    if (!org) {
+        throw new Error('Organization not found');
+    }
+
+    const existingClient = baileysManager.getClient(organizationId);
+    if (existingClient) {
+        throw new Error('WhatsApp client already connected for this organization');
+    }
+
+    await baileysManager.createClient(organizationId);
+}
+
+export async function getQRCode(organizationId: string): Promise<string>
+{
+    const clientInfo = baileysManager.getClient(organizationId);
+    if (!clientInfo) {
+        throw new Error('WhatsApp client not found for this organization');
+    }
+
+    if (!clientInfo.qrCode) {
+        throw new Error('QR code not available');
+    }
+
+    if (clientInfo.isReady) {
+        throw new Error('WhatsApp client is already connected');
+    }
+
+    if (!clientInfo.qrCode) {
+        throw new Error('QR code not available');
+    }
+
+
+    return clientInfo.qrCode;
 }

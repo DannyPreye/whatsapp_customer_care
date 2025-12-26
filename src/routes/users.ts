@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as usersController from '../controllers/users.controller';
 import { validate } from '../middlewares/validate';
+import { authRequired } from '../middlewares/auth';
 import { z } from 'zod';
 import { UserRole } from '../models/user.model';
 
@@ -30,6 +31,7 @@ const updateRoleSchema = z.object({
 
 router.get('/', usersController.list);
 router.post('/', validate(createUserSchema), usersController.create);
+router.get('/:id/dependencies', authRequired, usersController.getDependencies);
 router.get('/:id', usersController.getById);
 router.put('/:id', validate(updateUserSchema), usersController.update);
 router.delete('/:id', usersController.remove);
