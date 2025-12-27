@@ -62,57 +62,60 @@ export class DocumentsService
         content?: string;
     }): Promise<DocumentEntity>
     {
-        try {
-            const created = await DocumentModel.create({
-                organizationId: input.organizationId,
-                name: input.name,
-                originalName: input.originalName,
-                type: input.type,
-                fileUrl: input.fileUrl,
-                fileSize: input.fileSize,
-                mimeType: input.mimeType,
-                uploadedBy: input.uploadedBy,
-                status: ProcessStatus.PENDING
-            });
+        const created = await DocumentModel.create({
+            organizationId: input.organizationId,
+            name: input.name,
+            originalName: input.originalName,
+            type: input.type,
+            fileUrl: input.fileUrl,
+            fileSize: input.fileSize,
+            mimeType: input.mimeType,
+            uploadedBy: input.uploadedBy,
+            status: ProcessStatus.PENDING
+        });
 
+        // Process and store in vector store in the background
+        this.processDocumentInBackground(created._id.toString(), input);
+
+        return created.toJSON() as any;
+    }
+
+    private async processDocumentInBackground(documentId: string, input: any): Promise<void>
+    {
+        try {
             const processedDocument = await this.documentProcessorService.processDocument(
                 input.fileUrl,
                 input.type,
-                created._id.toString(),
+                documentId,
                 input.name
             );
 
             // Store in Vector Store
             const vectorIds = await this.vectorStoreService.addDocument(
                 input.organizationId,
-                created._id.toString(),
+                documentId,
                 processedDocument.chunks
             );
 
             await DocumentChunkModel.insertMany(
                 processedDocument.chunks.map((c, index) => ({
-                    documentId: created._id,
+                    documentId: documentId,
                     content: c.content,
                     chunkIndex: c.chunkIndex,
                     vectorId: vectorIds[ index ]
                 }))
             );
 
-            await DocumentModel.findByIdAndUpdate(created._id, {
+            await DocumentModel.findByIdAndUpdate(documentId, {
                 status: ProcessStatus.COMPLETED,
                 processedAt: new Date()
             });
-
-
-
-            return created.toJSON() as any;
         } catch (error) {
-
-            await DocumentModel.findByIdAndUpdate(input.organizationId, {
+            console.error(`Failed to process document ${documentId}:`, error);
+            await DocumentModel.findByIdAndUpdate(documentId, {
                 status: ProcessStatus.FAILED,
                 processedAt: new Date()
             });
-            throw error;
         }
     }
 

@@ -19,8 +19,6 @@ const router = Router();
 const uploadSchema = z.object({
     organizationId: z.string(),
     name: z.string().optional(),
-    type: z.string().optional(),
-    uploadedBy: z.string(),
     content: z.string().optional()
 });
 

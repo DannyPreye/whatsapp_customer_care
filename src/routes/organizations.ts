@@ -12,12 +12,7 @@ const baseSchema = z.object({
     ownerId: z.string().min(1),
     description: z.string().optional(),
     industry: z.string().optional(),
-    website: z.string().url().optional(),
-    whatsappPhoneId: z.string().optional(),
-    whatsappToken: z.string().optional(),
-    whatsappBusinessId: z.string().optional(),
-    isActive: z.boolean().optional(),
-    settings: z.record(z.string(), z.any()).optional()
+    isActive: z.boolean().optional()
 });
 
 const agentSettingsSchema = z.object({
@@ -41,8 +36,11 @@ router.post('/', validate(baseSchema), orgController.create);
 router.get('/:id', orgController.getById);
 router.put('/:id', validate(updateSchema), orgController.update);
 router.delete('/:id', orgController.remove);
-router.get('/:id/connect-whatsapp', orgController.connectWhatsApp);
-router.get('/oauth/meta/callback', orgController.handleWhatsAppCallback);
+router.get('/:id/whatsapp/init-oauth', orgController.initWhatsAppOAuth);
+router.get('/whatsapp/callback', orgController.handleWhatsAppCallback);
+router.get('/whatsapp/accounts', orgController.getWhatsAppOptions);
+router.get('/whatsapp/phone-numbers', orgController.getPhoneNumberOptions);
+router.post('/:id/whatsapp/save-config', orgController.saveWhatsAppConfig);
 router.get('/:id/settings', orgController.getSettings);
 router.put('/:id/settings', validate(z.record(z.string(), z.any())), orgController.updateSettings);
 router.get('/:id/agent-settings', orgController.getAgentSettings);

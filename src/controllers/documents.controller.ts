@@ -5,23 +5,40 @@ import { ok, created, noContent } from '../utils/response';
 
 const service = new DocumentsService();
 
+function getDocumentTypeFromMimeType(mimeType: string): string
+{
+    if (mimeType === 'application/pdf') return 'PDF';
+    if (mimeType.startsWith('image/')) return 'IMAGE';
+    if (mimeType === 'text/plain') return 'TEXT';
+    if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'DOCX';
+    if (mimeType === 'application/vnd.ms-excel' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'EXCEL';
+    if (mimeType === 'text/csv') return 'CSV';
+    return 'TEXT';
+}
+
 export async function uploadDocument(req: Request, res: Response)
 {
     const file = (req as any).file as Express.Multer.File | undefined;
     if (!file) return res.status(400).json({ error: 'file is required' });
+
+    const user = (req as any).user;
+    if (!user || !user.id) return res.status(401).json({ error: 'Unauthorized' });
+
     const upload = await cloudinaryService.uploadBuffer(file.buffer, file.originalname);
     const payload = {
         organizationId: req.body.organizationId,
         name: req.body.name || file.originalname,
         originalName: file.originalname,
-        type: (req.body.type as any) || 'TEXT',
+        type: getDocumentTypeFromMimeType(file.mimetype),
         fileUrl: upload.url,
         fileSize: upload.bytes,
         mimeType: file.mimetype,
-        uploadedBy: req.body.uploadedBy,
+        uploadedBy: user.id,
         content: req.body.content
     } as any;
     const data = await service.upload(payload);
+
+
     return created(res, data);
 }
 

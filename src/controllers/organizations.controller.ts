@@ -67,28 +67,92 @@ export async function updateAgentSettings(req: Request, res: Response)
 }
 
 
-export async function connectWhatsApp(req: Request, res: Response)
+export async function initWhatsAppOAuth(req: Request, res: Response)
 {
     try {
         const organizationId = req.params.id;
+        const org = await orgService.getOrganizationById(organizationId);
+        if (!org) return res.status(404).json({ error: 'Organization not found' });
 
-        const state = crypto.randomBytes(16).toString('hex');
-
-        // Persist state in DB (expire after 10 minutes on read)
+        // Generate secure state token
+        const state = crypto.randomBytes(32).toString('hex');
         await oauthStateService.createState(state, organizationId);
 
         const auth = new WhatsappAuthService();
-        const url = auth.getAuthorizationUrl(state);
+        const authUrl = auth.getAuthorizationUrl(state);
 
-        // Return the URL to the client so they can be redirected
-        return res.json({ url });
-
+        return res.json({
+            authUrl,
+            message: 'Redirect user to this URL to authorize WhatsApp access'
+        });
     } catch (error) {
-        console.error('connectWhatsApp error', error);
-        return res.status(500).json({ error: 'Failed to initiate WhatsApp connection' });
+        console.error('initWhatsAppOAuth error', error);
+        return res.status(500).json({ error: 'Failed to initiate WhatsApp OAuth' });
     }
 }
 
+
+export async function getWhatsAppOptions(req: Request, res: Response)
+{
+    try {
+        const { state } = req.query as Record<string, string>;
+        if (!state) return res.status(400).json({ error: 'Missing state parameter' });
+
+        const stored = await oauthStateService.getState(state);
+        if (!stored) return res.status(400).json({ error: 'Invalid or expired state' });
+
+        const age = Date.now() - new Date(stored.createdAt).getTime();
+        if (age > 10 * 60 * 1000) {
+            await oauthStateService.deleteState(state);
+            return res.status(400).json({ error: 'State expired, reinitiate OAuth flow' });
+        }
+
+        // Token should be stored in state
+        const accessToken = stored.accessToken as string;
+        if (!accessToken) return res.status(400).json({ error: 'No access token found' });
+
+        const auth = new WhatsappAuthService();
+        const wabas = await auth.getWhatsAppBusinessAccounts(accessToken);
+        if (!wabas || wabas.length === 0) return res.status(400).json({ error: 'No WhatsApp Business Accounts found' });
+
+        return res.json({
+            wabaOptions: wabas.map(w => ({ id: w.id, name: w.name, timezone_id: w.timezone_id }))
+        });
+    } catch (error: any) {
+        console.error('getWhatsAppOptions error', error?.message);
+        return res.status(500).json({ error: error?.message || 'Failed to fetch WhatsApp accounts' });
+    }
+}
+
+export async function getPhoneNumberOptions(req: Request, res: Response)
+{
+    try {
+        const { state, wabaId } = req.query as Record<string, string>;
+        if (!state || !wabaId) return res.status(400).json({ error: 'Missing state or wabaId' });
+
+        const stored = await oauthStateService.getState(state);
+        if (!stored) return res.status(400).json({ error: 'Invalid or expired state' });
+
+        const accessToken = stored.accessToken as string;
+        if (!accessToken) return res.status(400).json({ error: 'No access token found' });
+
+        const auth = new WhatsappAuthService();
+        const phones = await auth.getPhoneNumbers(wabaId, accessToken);
+        if (!phones || phones.length === 0) return res.status(400).json({ error: 'No phone numbers found for this account' });
+
+        return res.json({
+            phoneOptions: phones.map(p => ({
+                id: p.id,
+                displayPhoneNumber: p.display_phone_number,
+                verifiedName: p.verified_name,
+                qualityRating: p.quality_rating
+            }))
+        });
+    } catch (error: any) {
+        console.error('getPhoneNumberOptions error', error?.message);
+        return res.status(500).json({ error: error?.message || 'Failed to fetch phone numbers' });
+    }
+}
 
 export async function handleWhatsAppCallback(req: Request, res: Response)
 {
@@ -103,45 +167,70 @@ export async function handleWhatsAppCallback(req: Request, res: Response)
         const age = Date.now() - new Date(stored.createdAt).getTime();
         if (age > 10 * 60 * 1000) {
             await oauthStateService.deleteState(state);
-            return res.status(400).json({ error: 'State expired' });
+            return res.status(400).json({ error: 'State expired, reinitiate OAuth flow' });
         }
-
-        const organizationId = stored.organizationId as string;
 
         const auth = new WhatsappAuthService();
 
-        // exchange code -> short lived token
-        const short = await auth.exchangeCodeForToken(code);
+        // Exchange code for short-lived token
+        const shortLived = await auth.exchangeCodeForToken(code);
 
-        // exchange for long lived token
-        const long = await auth.getLongLivedToken(short.access_token);
+        // Exchange for long-lived token
+        const longLived = await auth.getLongLivedToken(shortLived.access_token);
 
-        // fetch WABA accounts
-        const wabas = await auth.getWhatsAppBusinessAccounts(long.access_token);
-        if (!wabas || wabas.length === 0) return res.status(400).json({ error: 'No WhatsApp Business Account found' });
+        // Store token in state for later retrieval by user
+        await oauthStateService.updateState(state, { accessToken: longLived.access_token });
 
-        const waba = wabas[ 0 ];
+        // Return success with state (frontend will use this to fetch account options)
+        return res.json({
+            success: true,
+            state: state,
+            message: 'Authorization successful. Please select your WhatsApp Business Account and phone number.'
+        });
+    } catch (error: any) {
+        console.error('handleWhatsAppCallback error', error?.message);
+        return res.status(500).json({ error: error?.message || 'OAuth callback handling failed' });
+    }
+}
 
-        // fetch phone numbers
-        const phones = await auth.getPhoneNumbers(waba.id, long.access_token);
-        if (!phones || phones.length === 0) return res.status(400).json({ error: 'No phone numbers found for WABA' });
+export async function saveWhatsAppConfig(req: Request, res: Response)
+{
+    try {
+        const organizationId = req.params.id;
+        const { state, wabaId, phoneNumberId } = req.body;
 
-        const phone = phones[ 0 ];
+        if (!state || !wabaId || !phoneNumberId) {
+            return res.status(400).json({ error: 'Missing required fields: state, wabaId, phoneNumberId' });
+        }
 
-        // persist into organization
-        await orgService.updateOrganization(organizationId, {
-            whatsappToken: long.access_token,
-            whatsappBusinessId: waba.id,
-            whatsappPhoneId: phone.id
+        const stored = await oauthStateService.getState(state);
+        if (!stored) return res.status(400).json({ error: 'Invalid or expired state' });
+
+        const accessToken = stored.accessToken as string;
+        if (!accessToken) return res.status(400).json({ error: 'No access token found' });
+
+        // Verify organization exists
+        const org = await orgService.getOrganizationById(organizationId);
+        if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+        // Save WhatsApp configuration
+        const updated = await orgService.updateOrganization(organizationId, {
+            whatsappToken: accessToken,
+            whatsappBusinessId: wabaId,
+            whatsappPhoneId: phoneNumberId
         } as any);
 
-        // cleanup state
+        // Cleanup state
         await oauthStateService.deleteState(state);
 
-        return res.json({ success: true });
+        return res.json({
+            success: true,
+            data: updated,
+            message: 'WhatsApp configuration saved successfully'
+        });
     } catch (error: any) {
-        console.error('handleWhatsAppCallback error', error?.message || error);
-        return res.status(500).json({ error: error?.message || 'Callback handling failed' });
+        console.error('saveWhatsAppConfig error', error?.message);
+        return res.status(500).json({ error: error?.message || 'Failed to save WhatsApp configuration' });
     }
 }
 

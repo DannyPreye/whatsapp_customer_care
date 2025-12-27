@@ -8,7 +8,12 @@ export async function createState(state: string, organizationId: string)
 
 export async function getState(state: string)
 {
-    return OAuthStateModel.findOne({ state }).lean();
+    return OAuthStateModel.findOne({ state }).select('+accessToken').lean();
+}
+
+export async function updateState(state: string, updates: Record<string, any>)
+{
+    return OAuthStateModel.findOneAndUpdate({ state }, updates, { new: true }).select('+accessToken').lean();
 }
 
 export async function deleteState(state: string)

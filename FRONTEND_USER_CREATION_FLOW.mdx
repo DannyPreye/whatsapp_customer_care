@@ -1,0 +1,953 @@
+# Frontend User Creation & WhatsApp Connection Flow
+
+This guide provides step-by-step instructions for frontend developers to implement the complete user registration, organization creation, and WhatsApp OAuth connection flow.
+
+## Complete User Journey
+
+```
+┌─────────────────────────────────────────┐
+│  Step 1: User Registration              │
+│  - Email, Password, Name                │
+│  - Create user account                  │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  Step 2: Organization Creation          │
+│  - Business name, industry, description │
+│  - Create organization                  │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  Step 3: Onboarding Dashboard           │
+│  - Show setup checklist                 │
+│  - Prompt to connect WhatsApp           │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  Step 4: WhatsApp OAuth Flow            │
+│  - Init OAuth → Get Auth URL            │
+│  - Redirect to Meta                     │
+│  - Fetch & Select Business Account      │
+│  - Fetch & Select Phone Number          │
+│  - Save Configuration                   │
+└─────────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────────┐
+│  Step 5: Success!                       │
+│  - WhatsApp connected & ready           │
+│  - Start using the platform             │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Step 1: User Registration
+
+**API Endpoint:** `POST /api/v1/auth/register`
+
+### UI Components
+- Email input field
+- Password input field (with validation)
+- First name input
+- Last name input
+- Sign up button
+- Login link (for existing users)
+
+### Frontend Implementation
+
+```typescript
+interface RegisterPayload {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+}
+
+async function registerUser(data: RegisterPayload) {
+  const response = await fetch('/api/v1/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Registration failed');
+  }
+
+  const result = await response.json();
+  // Store tokens
+  localStorage.setItem('accessToken', result.data.accessToken);
+  localStorage.setItem('refreshToken', result.data.refreshToken);
+  
+  return result.data;
+}
+```
+
+### API Response
+```json
+{
+  "data": {
+    "user": {
+      "id": "user_123",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "role": "SUPER_ADMIN"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+  }
+}
+```
+
+### Next Step
+→ Navigate to **Organization Creation Page**
+
+---
+
+## Step 2: Organization Creation
+
+**API Endpoint:** `POST /api/v1/organizations`
+
+### UI Components
+- Business name input (required)
+- Description input (optional)
+- Industry dropdown (optional)
+- Create button
+- "Skip for now" button (optional)
+
+### Frontend Implementation
+
+```typescript
+interface CreateOrgPayload {
+  name: string;
+  ownerId: string;
+  description?: string;
+  industry?: string;
+}
+
+async function createOrganization(
+  data: CreateOrgPayload, 
+  accessToken: string
+) {
+  const response = await fetch('/api/v1/organizations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(data)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Organization creation failed');
+  }
+
+  const result = await response.json();
+  return result.data;
+}
+```
+
+### API Request
+```json
+{
+  "name": "Acme Corp",
+  "ownerId": "user_123",
+  "description": "E-commerce business",
+  "industry": "Retail"
+}
+```
+
+### API Response
+```json
+{
+  "data": {
+    "id": "org_456",
+    "name": "Acme Corp",
+    "ownerId": "user_123",
+    "description": "E-commerce business",
+    "industry": "Retail",
+    "isActive": true,
+    "whatsappPhoneId": null,
+    "whatsappToken": null,
+    "whatsappBusinessId": null,
+    "createdAt": "2024-12-27T10:00:00Z",
+    "updatedAt": "2024-12-27T10:00:00Z"
+  }
+}
+```
+
+### Important Notes
+- ⚠️ WhatsApp fields are `null` at this stage
+- These will be auto-populated when user connects WhatsApp
+- Store the `organizationId` for next steps
+
+### Next Step
+→ Navigate to **Onboarding Dashboard**
+
+---
+
+## Step 3: Onboarding Dashboard
+
+### UI Components
+Show a setup checklist with completion status:
+
+```
+✅ Account created
+✅ Organization created
+⏳ Connect WhatsApp  ← User is here
+⏳ Configure AI Agent
+⏳ Start sending messages
+```
+
+### UI Elements
+- Welcome message with organization name
+- Setup progress card
+- "Connect WhatsApp" button (prominent CTA)
+- Help/documentation links
+
+### Frontend Code Example
+
+```typescript
+interface OnboardingStatus {
+  accountCreated: boolean;
+  organizationCreated: boolean;
+  whatsappConnected: boolean;
+  agentConfigured: boolean;
+  readyToUse: boolean;
+}
+
+function OnboardingDashboard({ 
+  organizationId, 
+  accessToken 
+}: {
+  organizationId: string;
+  accessToken: string;
+}) {
+  const [status, setStatus] = useState<OnboardingStatus>({
+    accountCreated: true,
+    organizationCreated: true,
+    whatsappConnected: false,
+    agentConfigured: false,
+    readyToUse: false
+  });
+
+  const handleConnectWhatsApp = () => {
+    // Go to Step 4
+    navigateToWhatsAppConnection(organizationId, accessToken);
+  };
+
+  return (
+    <div className="onboarding-dashboard">
+      <h1>Welcome to WhatsApp Manager!</h1>
+      <ChecklistItem 
+        label="Account created" 
+        completed={status.accountCreated} 
+      />
+      <ChecklistItem 
+        label="Organization created" 
+        completed={status.organizationCreated} 
+      />
+      <ChecklistItem 
+        label="Connect WhatsApp" 
+        completed={status.whatsappConnected}
+        action={
+          <button onClick={handleConnectWhatsApp}>
+            Connect WhatsApp
+          </button>
+        }
+      />
+      <ChecklistItem 
+        label="Configure AI Agent" 
+        completed={status.agentConfigured}
+        disabled={!status.whatsappConnected}
+      />
+    </div>
+  );
+}
+```
+
+### Next Step
+→ User clicks "Connect WhatsApp" button to start **Step 4**
+
+---
+
+## Step 4: WhatsApp OAuth Connection
+
+### 4.1 Initialize OAuth
+
+**API Endpoint:** `GET /api/v1/organizations/:organizationId/whatsapp/init-oauth`
+
+**Purpose:** Get the authorization URL to redirect user to Meta login
+
+```typescript
+async function initWhatsAppOAuth(
+  organizationId: string, 
+  accessToken: string
+) {
+  const response = await fetch(
+    `/api/v1/organizations/${organizationId}/whatsapp/init-oauth`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (!response.ok) throw new Error('Failed to init OAuth');
+  
+  const { authUrl } = await response.json();
+  
+  // Redirect user to Meta
+  window.location.href = authUrl;
+}
+```
+
+### API Response
+```json
+{
+  "authUrl": "https://www.facebook.com/v21.0/dialog/oauth?client_id=...",
+  "message": "Redirect user to this URL to authorize WhatsApp access"
+}
+```
+
+### 4.2 Meta OAuth Callback Handling
+
+**What happens:**
+1. User is redirected to Meta login
+2. User logs in with their Meta/Facebook account
+3. User grants WhatsApp permissions
+4. User is redirected back with `code` and `state` in URL query parameters
+
+**Frontend Code to handle callback:**
+
+```typescript
+// In your callback page (e.g., /auth/whatsapp/callback)
+useEffect(() => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const code = urlParams.get('code');
+  const state = urlParams.get('state');
+  const error = urlParams.get('error');
+
+  if (error) {
+    console.error('Meta OAuth error:', error);
+    navigateToError('WhatsApp authorization failed');
+    return;
+  }
+
+  if (!code || !state) {
+    console.error('Missing code or state');
+    navigateToError('Invalid callback parameters');
+    return;
+  }
+
+  handleOAuthCallback(code, state);
+}, []);
+
+async function handleOAuthCallback(code: string, state: string) {
+  try {
+    // Your backend handles the callback
+    // The code exchange happens server-side
+    
+    // For now, we have the state token
+    // Next step is to fetch available accounts
+    navigateToSelectAccount(state);
+  } catch (error) {
+    navigateToError('Failed to process authorization');
+  }
+}
+```
+
+### 4.3 Fetch and Select WhatsApp Business Account
+
+**API Endpoint:** `GET /api/v1/organizations/whatsapp/accounts?state={state}`
+
+**Purpose:** Get list of WhatsApp Business Accounts available to the user
+
+```typescript
+interface WhatsAppAccount {
+  id: string;
+  name: string;
+  timezone_id: string;
+}
+
+async function fetchWhatsAppAccounts(
+  state: string, 
+  accessToken: string
+): Promise<WhatsAppAccount[]> {
+  const response = await fetch(
+    `/api/v1/organizations/whatsapp/accounts?state=${state}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (!response.ok) throw new Error('Failed to fetch accounts');
+  
+  const { wabaOptions } = await response.json();
+  return wabaOptions;
+}
+```
+
+### API Response
+```json
+{
+  "wabaOptions": [
+    {
+      "id": "123456789",
+      "name": "My Business",
+      "timezone_id": "America/New_York"
+    },
+    {
+      "id": "987654321",
+      "name": "Another Business",
+      "timezone_id": "Europe/London"
+    }
+  ]
+}
+```
+
+### UI for Account Selection
+
+```typescript
+function SelectWhatsAppAccount({ 
+  state, 
+  onSelectAccount 
+}: {
+  state: string;
+  onSelectAccount: (accountId: string) => void;
+}) {
+  const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadAccounts = async () => {
+      try {
+        const result = await fetchWhatsAppAccounts(state, accessToken);
+        setAccounts(result);
+      } catch (error) {
+        console.error('Failed to load accounts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAccounts();
+  }, [state]);
+
+  if (loading) return <Spinner />;
+
+  if (accounts.length === 0) {
+    return (
+      <div className="error-message">
+        <p>No WhatsApp Business Accounts found.</p>
+        <p>Please create one in your Meta Business account.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="account-selection">
+      <h2>Select WhatsApp Business Account</h2>
+      <div className="account-list">
+        {accounts.map((account) => (
+          <div 
+            key={account.id} 
+            className="account-card"
+            onClick={() => onSelectAccount(account.id)}
+          >
+            <h3>{account.name}</h3>
+            <p>Timezone: {account.timezone_id}</p>
+            <button>Select</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### 4.4 Fetch and Select Phone Number
+
+**API Endpoint:** `GET /api/v1/organizations/whatsapp/phone-numbers?state={state}&wabaId={wabaId}`
+
+**Purpose:** Get phone numbers for the selected business account
+
+```typescript
+interface PhoneNumber {
+  id: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+  qualityRating: string;
+}
+
+async function fetchPhoneNumbers(
+  state: string,
+  wabaId: string,
+  accessToken: string
+): Promise<PhoneNumber[]> {
+  const response = await fetch(
+    `/api/v1/organizations/whatsapp/phone-numbers?state=${state}&wabaId=${wabaId}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  if (!response.ok) throw new Error('Failed to fetch phone numbers');
+  
+  const { phoneOptions } = await response.json();
+  return phoneOptions;
+}
+```
+
+### API Response
+```json
+{
+  "phoneOptions": [
+    {
+      "id": "108234567890",
+      "displayPhoneNumber": "+1 (555) 123-4567",
+      "verifiedName": "Acme Corp",
+      "qualityRating": "GREEN"
+    },
+    {
+      "id": "108234567891",
+      "displayPhoneNumber": "+1 (555) 123-4568",
+      "verifiedName": "Support Team",
+      "qualityRating": "YELLOW"
+    }
+  ]
+}
+```
+
+### UI for Phone Number Selection
+
+```typescript
+function SelectPhoneNumber({ 
+  state,
+  wabaId,
+  onSelectPhone
+}: {
+  state: string;
+  wabaId: string;
+  onSelectPhone: (phoneId: string) => void;
+}) {
+  const [phones, setPhones] = useState<PhoneNumber[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPhones = async () => {
+      try {
+        const result = await fetchPhoneNumbers(state, wabaId, accessToken);
+        setPhones(result);
+      } catch (error) {
+        console.error('Failed to load phone numbers:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPhones();
+  }, [state, wabaId]);
+
+  if (loading) return <Spinner />;
+
+  return (
+    <div className="phone-selection">
+      <h2>Select Phone Number</h2>
+      <div className="phone-list">
+        {phones.map((phone) => (
+          <div 
+            key={phone.id}
+            className="phone-card"
+            onClick={() => onSelectPhone(phone.id)}
+          >
+            <h3>{phone.displayPhoneNumber}</h3>
+            <p>Verified Name: {phone.verifiedName}</p>
+            <div className="quality-badge">
+              Quality: <span className={`quality-${phone.qualityRating.toLowerCase()}`}>
+                {phone.qualityRating}
+              </span>
+            </div>
+            <button>Select</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### Quality Rating Explanation
+- 🟢 **GREEN** - Best quality, no sending restrictions
+- 🟡 **YELLOW** - Good quality, minor restrictions
+- 🔴 **RED** - Limited quality, significant restrictions
+
+### 4.5 Save WhatsApp Configuration
+
+**API Endpoint:** `POST /api/v1/organizations/:organizationId/whatsapp/save-config`
+
+**Purpose:** Save the selected account and phone number. This auto-populates WhatsApp fields.
+
+```typescript
+async function saveWhatsAppConfig(
+  organizationId: string,
+  state: string,
+  wabaId: string,
+  phoneNumberId: string,
+  accessToken: string
+) {
+  const response = await fetch(
+    `/api/v1/organizations/${organizationId}/whatsapp/save-config`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        state,
+        wabaId,
+        phoneNumberId
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to save configuration');
+  }
+
+  const result = await response.json();
+  return result.data; // Organization with auto-populated WhatsApp fields
+}
+```
+
+### API Request
+```json
+{
+  "state": "abc123def456...",
+  "wabaId": "123456789",
+  "phoneNumberId": "108234567890"
+}
+```
+
+### API Response
+```json
+{
+  "success": true,
+  "data": {
+    "id": "org_456",
+    "name": "Acme Corp",
+    "ownerId": "user_123",
+    "whatsappPhoneId": "108234567890",
+    "whatsappToken": "EAABsZA...",
+    "whatsappBusinessId": "123456789",
+    "isActive": true,
+    "createdAt": "2024-12-27T10:00:00Z",
+    "updatedAt": "2024-12-27T10:15:00Z"
+  },
+  "message": "WhatsApp configuration saved successfully"
+}
+```
+
+### Next Step
+→ Navigate to **Success Page**
+
+---
+
+## Step 5: Success!
+
+### UI Components
+- Success message/icon
+- Organization details
+- WhatsApp connection status
+- Quick action buttons:
+  - "Configure AI Agent"
+  - "Send First Message"
+  - "View Dashboard"
+
+### Frontend Code
+
+```typescript
+function WhatsAppConnectedSuccess({ organization }: { organization: Organization }) {
+  return (
+    <div className="success-screen">
+      <div className="success-icon">✓</div>
+      <h1>WhatsApp Connected!</h1>
+      
+      <div className="connection-details">
+        <p>Organization: <strong>{organization.name}</strong></p>
+        <p>Phone Number: <strong>{organization.whatsappPhoneId}</strong></p>
+        <p>Status: <span className="badge-success">Connected</span></p>
+      </div>
+
+      <div className="next-steps">
+        <h3>Next Steps:</h3>
+        <button onClick={() => navigate('/dashboard')}>
+          View Dashboard
+        </button>
+        <button onClick={() => navigate('/settings/agent')}>
+          Configure AI Agent
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Complete Flow Integration
+
+Here's how to orchestrate the entire flow in your app:
+
+```typescript
+// Main flow orchestrator
+type FlowStep = 'register' | 'organization' | 'onboarding' | 'whatsapp-oauth' | 'account-select' | 'phone-select' | 'success';
+
+function UserCreationFlow() {
+  const [step, setStep] = useState<FlowStep>('register');
+  const [user, setUser] = useState<User | null>(null);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [oauthState, setOauthState] = useState<string | null>(null);
+  const [selectedWaba, setSelectedWaba] = useState<string | null>(null);
+
+  const handleRegisterComplete = (registeredUser: User) => {
+    setUser(registeredUser);
+    setStep('organization');
+  };
+
+  const handleOrgCreate = (createdOrg: Organization) => {
+    setOrganization(createdOrg);
+    setStep('onboarding');
+  };
+
+  const handleConnectWhatsApp = async () => {
+    try {
+      await initWhatsAppOAuth(organization!.id, accessToken);
+      // User gets redirected to Meta
+    } catch (error) {
+      console.error('Failed to init OAuth:', error);
+    }
+  };
+
+  const handleOAuthCallback = async (code: string, state: string) => {
+    setOauthState(state);
+    setStep('account-select');
+  };
+
+  const handleAccountSelect = (wabaId: string) => {
+    setSelectedWaba(wabaId);
+    setStep('phone-select');
+  };
+
+  const handlePhoneSelect = async (phoneId: string) => {
+    try {
+      const updated = await saveWhatsAppConfig(
+        organization!.id,
+        oauthState!,
+        selectedWaba!,
+        phoneId,
+        accessToken
+      );
+      setOrganization(updated);
+      setStep('success');
+    } catch (error) {
+      console.error('Failed to save config:', error);
+    }
+  };
+
+  // Render based on current step
+  return (
+    <>
+      {step === 'register' && (
+        <RegisterPage onComplete={handleRegisterComplete} />
+      )}
+      {step === 'organization' && (
+        <OrganizationPage 
+          userId={user!.id}
+          onComplete={handleOrgCreate} 
+        />
+      )}
+      {step === 'onboarding' && (
+        <OnboardingDashboard 
+          organization={organization!}
+          onConnectWhatsApp={handleConnectWhatsApp}
+        />
+      )}
+      {step === 'account-select' && (
+        <SelectWhatsAppAccount 
+          state={oauthState!}
+          onSelectAccount={handleAccountSelect}
+        />
+      )}
+      {step === 'phone-select' && (
+        <SelectPhoneNumber 
+          state={oauthState!}
+          wabaId={selectedWaba!}
+          onSelectPhone={handlePhoneSelect}
+        />
+      )}
+      {step === 'success' && (
+        <WhatsAppConnectedSuccess organization={organization!} />
+      )}
+    </>
+  );
+}
+```
+
+---
+
+## Error Handling Guide
+
+### Common Errors and Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Invalid or expired state` | OAuth state token expired (>10 min) | Start OAuth flow again |
+| `No WhatsApp Business Accounts found` | User's Meta account not linked to WABA | Direct user to Meta Business setup |
+| `No phone numbers found for this account` | WABA has no phone numbers | Add phone number in Meta Business Manager |
+| `Network error` | Connection issue | Retry with exponential backoff |
+| `401 Unauthorized` | Invalid or expired access token | Refresh token and retry |
+
+### Frontend Error Handling Pattern
+
+```typescript
+async function withErrorHandling<T>(
+  fn: () => Promise<T>,
+  onError?: (error: Error) => void
+): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    console.error('Operation failed:', message);
+    
+    // Show user-friendly error message
+    showErrorNotification(message);
+    
+    if (onError) onError(error as Error);
+    
+    return null;
+  }
+}
+
+// Usage
+const accounts = await withErrorHandling(
+  () => fetchWhatsAppAccounts(state, accessToken),
+  (error) => navigateToError('Failed to load accounts')
+);
+```
+
+---
+
+## TypeScript Types Reference
+
+```typescript
+// User
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'AGENT' | 'VIEWER';
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Organization
+interface Organization {
+  id: string;
+  name: string;
+  description?: string;
+  industry?: string;
+  website?: string;
+  ownerId: string;
+  isActive: boolean;
+  whatsappPhoneId?: string;
+  whatsappToken?: string;
+  whatsappBusinessId?: string;
+  settings: Record<string, unknown>;
+  agentSettings?: AgentSettings;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// WhatsApp Account
+interface WhatsAppAccount {
+  id: string;
+  name: string;
+  timezone_id: string;
+}
+
+// Phone Number
+interface PhoneNumber {
+  id: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+  qualityRating: 'GREEN' | 'YELLOW' | 'RED';
+}
+```
+
+---
+
+## Environment Variables
+
+Ensure your backend has these environment variables set:
+
+```env
+META_APP_ID=your_meta_app_id
+META_APP_SECRET=your_meta_app_secret
+META_REDIRECT_URI=https://yourdomain.com/auth/whatsapp/callback
+```
+
+The `META_REDIRECT_URI` should point to your callback handler page where you handle the OAuth redirect.
+
+---
+
+## Testing Checklist
+
+- [ ] User can register with valid credentials
+- [ ] Registration fails with invalid email
+- [ ] User can create organization with basic info only
+- [ ] Organization created with WhatsApp fields as `null`
+- [ ] Onboarding dashboard displays correctly
+- [ ] WhatsApp OAuth redirects to Meta login
+- [ ] Meta OAuth callback returns with code and state
+- [ ] Can fetch WhatsApp Business Accounts
+- [ ] Can select account and fetch phone numbers
+- [ ] Phone number quality rating displays correctly
+- [ ] Configuration saves and auto-populates WhatsApp fields
+- [ ] Success page shows organization with WhatsApp details
+- [ ] Error handling works for each step
+- [ ] State expiry prevents old tokens from being used
+- [ ] Access token authorization works on all endpoints
+
+---
+
+## Support & Troubleshooting
+
+**Issues with WhatsApp Business Account?**
+→ Visit [Meta Business Manager](https://business.facebook.com)
+
+**Phone number not showing up?**
+→ Ensure phone number is verified in Meta Business Manager
+
+**OAuth redirect not working?**
+→ Check `META_REDIRECT_URI` environment variable matches frontend callback URL
+
+**State expired error?**
+→ Complete OAuth flow within 10 minutes of starting
+
+---
+
+This flow ensures a smooth user experience while maintaining security through proper OAuth handling and state verification.

@@ -122,21 +122,25 @@ const definition: OpenAPIV3.Document = {
             CreateOrganizationInput: {
                 type: 'object',
                 properties: {
-                    name: { type: 'string' },
-                    ownerId: { type: 'string' },
-                    description: { type: 'string' },
-                    industry: { type: 'string' },
-                    website: { type: 'string' },
-                    whatsappPhoneId: { type: 'string' },
-                    whatsappToken: { type: 'string' },
-                    whatsappBusinessId: { type: 'string' },
-                    isActive: { type: 'boolean' },
-                    settings: { type: 'object', additionalProperties: true },
-                    agentSettings: { $ref: '#/components/schemas/AgentSettings' }
+                    name: { type: 'string', description: 'Organization name' },
+                    ownerId: { type: 'string', description: 'User ID of the organization owner' },
+                    description: { type: 'string', description: 'Optional organization description' },
+                    industry: { type: 'string', description: 'Optional industry type' },
+                    isActive: { type: 'boolean', description: 'Organization status', default: true }
                 },
                 required: [ 'name', 'ownerId' ]
             },
-            UpdateOrganizationInput: { $ref: '#/components/schemas/CreateOrganizationInput' },
+            UpdateOrganizationInput: {
+                type: 'object',
+                description: 'All fields optional for partial updates',
+                properties: {
+                    name: { type: 'string' },
+                    description: { type: 'string' },
+                    industry: { type: 'string' },
+                    website: { type: 'string' },
+                    isActive: { type: 'boolean' }
+                }
+            },
             CreateUserInput: {
                 type: 'object',
                 properties: {
@@ -224,17 +228,11 @@ const definition: OpenAPIV3.Document = {
             UploadDocumentInput: {
                 type: 'object',
                 properties: {
-                    organizationId: { type: 'string' },
-                    name: { type: 'string' },
-                    originalName: { type: 'string' },
-                    type: { type: 'string' },
-                    fileUrl: { type: 'string' },
-                    fileSize: { type: 'number' },
-                    mimeType: { type: 'string' },
-                    uploadedBy: { type: 'string' },
-                    content: { type: 'string' }
+                    organizationId: { type: 'string', description: 'Organization ID' },
+                    name: { type: 'string', description: 'Optional document name, defaults to original filename' },
+                    content: { type: 'string', description: 'Optional document content' }
                 },
-                required: [ 'organizationId', 'name', 'originalName', 'type', 'fileUrl', 'fileSize', 'mimeType', 'uploadedBy' ]
+                required: [ 'organizationId' ]
             },
             Integration: {
                 type: 'object',
@@ -483,6 +481,7 @@ const definition: OpenAPIV3.Document = {
             },
             post: {
                 summary: 'Create organization',
+                description: 'Create a new organization during user registration. WhatsApp fields (whatsappPhoneId, whatsappToken, whatsappBusinessId), website, and agent settings will be added later via dedicated endpoints.',
                 tags: [ 'Organizations' ],
                 requestBody: {
                     required: true,
@@ -588,6 +587,166 @@ const definition: OpenAPIV3.Document = {
                                 schema: {
                                     type: 'object',
                                     properties: { data: { type: 'object', properties: { url: { type: 'string' } } } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        '/api/v1/organizations/{id}/whatsapp/init-oauth': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Initialize WhatsApp OAuth flow (Step 1)',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'OAuth authorization URL',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        authUrl: { type: 'string', description: 'URL to redirect user for authorization' },
+                                        message: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        '/api/v1/organizations/whatsapp/callback': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'OAuth callback handler (Step 2)',
+                description: 'Handles the callback from Meta OAuth. Returns state token for selecting WABA and phone number.',
+                parameters: [
+                    { name: 'code', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'state', in: 'query', required: true, schema: { type: 'string' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Token exchange successful',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean' },
+                                        state: { type: 'string', description: 'State token for next steps' },
+                                        message: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        '/api/v1/organizations/whatsapp/accounts': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Get available WhatsApp Business Accounts (Step 3)',
+                parameters: [ { name: 'state', in: 'query', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'List of available accounts',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        wabaOptions: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                properties: {
+                                                    id: { type: 'string' },
+                                                    name: { type: 'string' },
+                                                    timezone_id: { type: 'string' }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        '/api/v1/organizations/whatsapp/phone-numbers': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Get phone numbers for selected account (Step 4)',
+                parameters: [
+                    { name: 'state', in: 'query', required: true, schema: { type: 'string' } },
+                    { name: 'wabaId', in: 'query', required: true, schema: { type: 'string' } }
+                ],
+                responses: {
+                    200: {
+                        description: 'List of available phone numbers',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        phoneOptions: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                properties: {
+                                                    id: { type: 'string' },
+                                                    displayPhoneNumber: { type: 'string' },
+                                                    verifiedName: { type: 'string' },
+                                                    qualityRating: { type: 'string' }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        '/api/v1/organizations/{id}/whatsapp/save-config': {
+            post: {
+                tags: [ 'Organizations' ],
+                summary: 'Save WhatsApp configuration (Step 5)',
+                description: 'Automatically populates whatsappPhoneId, whatsappBusinessId, and whatsappToken fields on the organization.',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    state: { type: 'string', description: 'OAuth state token from callback' },
+                                    wabaId: { type: 'string', description: 'Selected WhatsApp Business Account ID' },
+                                    phoneNumberId: { type: 'string', description: 'Selected phone number ID' }
+                                },
+                                required: [ 'state', 'wabaId', 'phoneNumberId' ]
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    200: {
+                        description: 'Configuration saved with auto-populated WhatsApp fields',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean' },
+                                        data: { $ref: '#/components/schemas/Organization' },
+                                        message: { type: 'string' }
+                                    }
                                 }
                             }
                         }
@@ -764,6 +923,7 @@ const definition: OpenAPIV3.Document = {
             post: {
                 tags: [ 'Documents' ],
                 summary: 'Upload document (multipart to Cloudinary)',
+                description: 'Document type is automatically determined from file MIME type. uploadedBy is automatically set to the authenticated user.',
                 requestBody: {
                     required: true,
                     content: {
@@ -771,14 +931,12 @@ const definition: OpenAPIV3.Document = {
                             schema: {
                                 type: 'object',
                                 properties: {
-                                    file: { type: 'string', format: 'binary' },
-                                    organizationId: { type: 'string' },
-                                    name: { type: 'string' },
-                                    type: { type: 'string' },
-                                    uploadedBy: { type: 'string' },
-                                    content: { type: 'string' }
+                                    file: { type: 'string', format: 'binary', description: 'Document file to upload' },
+                                    organizationId: { type: 'string', description: 'Organization ID' },
+                                    name: { type: 'string', description: 'Optional document name, defaults to original filename' },
+                                    content: { type: 'string', description: 'Optional document content' }
                                 },
-                                required: [ 'file', 'organizationId', 'uploadedBy' ]
+                                required: [ 'file', 'organizationId' ]
                             }
                         }
                     }

@@ -6,6 +6,7 @@ export interface OAuthState extends Document<string>
     _id: string;
     state: string;
     organizationId: string;
+    accessToken?: string;
     createdAt: Date;
 }
 
@@ -13,7 +14,8 @@ const OAuthStateSchema = new Schema<any>(
     {
         _id: { type: String, default: uuidv4 },
         state: { type: String, required: true, unique: true },
-        organizationId: { type: String, required: true }
+        organizationId: { type: String, required: true },
+        accessToken: { type: String, select: false }
     },
     { timestamps: { createdAt: 'createdAt', updatedAt: false } }
 );
