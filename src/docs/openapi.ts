@@ -208,6 +208,42 @@ const definition: OpenAPIV3.Document = {
                 },
                 required: [ 'organizationId', 'whatsappNumber' ]
             },
+            Conversation: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    organizationId: { type: 'string' },
+                    customerId: { type: 'string' },
+                    status: { type: 'string', enum: [ 'ACTIVE', 'WAITING_FOR_AGENT', 'WITH_AGENT', 'RESOLVED', 'ARCHIVED' ] },
+                    assignedToId: { type: 'string' },
+                    priority: { type: 'string', enum: [ 'LOW', 'MEDIUM', 'HIGH', 'URGENT' ] },
+                    startedAt: { type: 'string', format: 'date-time' },
+                    endedAt: { type: 'string', format: 'date-time' },
+                    lastMessageAt: { type: 'string', format: 'date-time' },
+                    metadata: { type: 'object', additionalProperties: true }
+                },
+                required: [ 'id', 'organizationId', 'customerId', 'status', 'priority', 'startedAt', 'lastMessageAt' ]
+            },
+            Message: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    conversationId: { type: 'string' },
+                    whatsappId: { type: 'string' },
+                    direction: { type: 'string', enum: [ 'INBOUND', 'OUTBOUND' ] },
+                    type: { type: 'string', enum: [ 'TEXT', 'IMAGE', 'DOCUMENT', 'AUDIO', 'VIDEO', 'LOCATION', 'TEMPLATE' ] },
+                    content: { type: 'string' },
+                    metadata: { type: 'object', additionalProperties: true },
+                    status: { type: 'string', enum: [ 'PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED' ] },
+                    isFromAgent: { type: 'boolean' },
+                    aiGenerated: { type: 'boolean' },
+                    confidence: { type: 'number' },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    deliveredAt: { type: 'string', format: 'date-time' },
+                    readAt: { type: 'string', format: 'date-time' }
+                },
+                required: [ 'id', 'conversationId', 'direction', 'type', 'content', 'status', 'isFromAgent', 'aiGenerated', 'createdAt' ]
+            },
             Document: {
                 type: 'object',
                 properties: {
@@ -855,16 +891,28 @@ const definition: OpenAPIV3.Document = {
             get: {
                 tags: [ 'Customers' ],
                 summary: 'List customers',
+                description: 'Returns customers the authenticated user can access. Members and owners see customers for their organizations. Optional filter by organization.',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: false, schema: { type: 'string' }, description: 'Filter by organization ID (must be in user organizations)' }
+                ],
                 responses: {
-                    200: { description: 'List', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Customer' } } } } } } }
+                    200: { description: 'List', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Customer' } } } } } } },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' }
                 }
             },
             post: {
                 tags: [ 'Customers' ],
                 summary: 'Create customer',
+                description: 'Owner-only: Only the organization owner can create customers for that organization.',
+                security: [ { bearerAuth: [] } ],
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateCustomerInput' } } } },
                 responses: {
-                    201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } }
+                    201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } },
+                    400: { description: 'Bad Request' },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' }
                 }
             }
         },
@@ -872,51 +920,153 @@ const definition: OpenAPIV3.Document = {
             get: {
                 tags: [ 'Customers' ],
                 summary: 'Get customer',
+                description: 'Members and owners can fetch customers in their organizations.',
+                security: [ { bearerAuth: [] } ],
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
                 responses: {
                     200: { description: 'Customer', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' },
                     404: { description: 'Not found' }
                 }
             },
             put: {
                 tags: [ 'Customers' ],
                 summary: 'Update customer',
+                description: 'Owner-only: Only the organization owner can update customers in their organization.',
+                security: [ { bearerAuth: [] } ],
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateCustomerInput' } } } },
                 responses: {
                     200: { description: 'Updated', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } },
+                    400: { description: 'Bad Request' },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' },
                     404: { description: 'Not found' }
                 }
             },
             delete: {
                 tags: [ 'Customers' ],
                 summary: 'Delete customer',
+                description: 'Owner-only: Only the organization owner can delete customers in their organization.',
+                security: [ { bearerAuth: [] } ],
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 204: { description: 'Deleted' }, 404: { description: 'Not found' } }
+                responses: { 204: { description: 'Deleted' }, 401: { description: 'Unauthorized' }, 403: { description: 'Forbidden' }, 404: { description: 'Not found' } }
             }
         },
         '/api/v1/customers/{id}/conversations': {
             get: {
                 tags: [ 'Customers' ],
                 summary: 'List customer conversations',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 200: { description: 'List', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } } } } }
+                description: 'Members and owners can view conversations for customers in their organizations.',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+                    { name: 'page', in: 'query', required: false, schema: { type: 'integer', minimum: 1 } },
+                    { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 100 } },
+                    { name: 'status', in: 'query', required: false, schema: { type: 'string' } },
+                    { name: 'priority', in: 'query', required: false, schema: { type: 'string' } },
+                    { name: 'assignedToId', in: 'query', required: false, schema: { type: 'string' } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'sortBy', in: 'query', required: false, schema: { type: 'string', enum: [ 'lastMessageAt', 'startedAt', 'endedAt' ] } },
+                    { name: 'order', in: 'query', required: false, schema: { type: 'string', enum: [ 'asc', 'desc' ] } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Paginated conversations',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        data: {
+                                            type: 'object',
+                                            properties: {
+                                                items: { type: 'array', items: { $ref: '#/components/schemas/Conversation' } },
+                                                page: { type: 'integer' },
+                                                limit: { type: 'integer' },
+                                                total: { type: 'integer' },
+                                                pages: { type: 'integer' }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' },
+                    404: { description: 'Not found' }
+                }
             }
         },
         '/api/v1/customers/{id}/block': {
             put: {
                 tags: [ 'Customers' ],
                 summary: 'Block customer',
+                description: 'Owner-only: Only the organization owner can block customers in their organization.',
+                security: [ { bearerAuth: [] } ],
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 200: { description: 'Blocked', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } } }
+                responses: { 200: { description: 'Blocked', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } }, 401: { description: 'Unauthorized' }, 403: { description: 'Forbidden' }, 404: { description: 'Not found' } }
             }
         },
         '/api/v1/customers/{id}/unblock': {
             put: {
                 tags: [ 'Customers' ],
                 summary: 'Unblock customer',
+                description: 'Owner-only: Only the organization owner can unblock customers in their organization.',
+                security: [ { bearerAuth: [] } ],
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 200: { description: 'Unblocked', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } } }
+                responses: { 200: { description: 'Unblocked', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } }, 401: { description: 'Unauthorized' }, 403: { description: 'Forbidden' }, 404: { description: 'Not found' } }
+            }
+        },
+        '/api/v1/conversations/{id}/messages': {
+            get: {
+                tags: [ 'Conversations' ],
+                summary: 'List messages for a conversation',
+                description: 'Members and owners can view messages for conversations in their organizations. Supports pagination and search.',
+                security: [ { bearerAuth: [] } ],
+                parameters: [
+                    { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+                    { name: 'page', in: 'query', required: false, schema: { type: 'integer', minimum: 1 } },
+                    { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 200 } },
+                    { name: 'q', in: 'query', required: false, schema: { type: 'string' }, description: 'Search text in message content' },
+                    { name: 'direction', in: 'query', required: false, schema: { type: 'string', enum: [ 'INBOUND', 'OUTBOUND' ] } },
+                    { name: 'type', in: 'query', required: false, schema: { type: 'string', enum: [ 'TEXT', 'IMAGE', 'DOCUMENT', 'AUDIO', 'VIDEO', 'LOCATION', 'TEMPLATE' ] } },
+                    { name: 'status', in: 'query', required: false, schema: { type: 'string', enum: [ 'PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED' ] } },
+                    { name: 'startDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'endDate', in: 'query', required: false, schema: { type: 'string', format: 'date-time' } },
+                    { name: 'sortBy', in: 'query', required: false, schema: { type: 'string', enum: [ 'createdAt', 'deliveredAt', 'readAt' ] } },
+                    { name: 'order', in: 'query', required: false, schema: { type: 'string', enum: [ 'asc', 'desc' ] } }
+                ],
+                responses: {
+                    200: {
+                        description: 'Paginated messages',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        data: {
+                                            type: 'object',
+                                            properties: {
+                                                items: { type: 'array', items: { $ref: '#/components/schemas/Message' } },
+                                                page: { type: 'integer' },
+                                                limit: { type: 'integer' },
+                                                total: { type: 'integer' },
+                                                pages: { type: 'integer' }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' },
+                    404: { description: 'Not found' }
+                }
             }
         },
         '/api/v1/documents/upload': {

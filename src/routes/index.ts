@@ -9,6 +9,7 @@ import integrations from './integrations';
 import webhook from './webhook';
 import analytics from './analytics';
 import followups from './followups';
+import conversations from './conversations';
 
 const router = Router();
 router.use('/health', health);
@@ -21,5 +22,6 @@ router.use('/', documents);
 router.use('/', integrations);
 router.use('/', analytics);
 router.use('/', followups);
+router.use('/', conversations);
 
 export default router;
