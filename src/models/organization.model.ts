@@ -1,6 +1,9 @@
 import { Schema, model, Document } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
+export type WhatsappAuthType = 'oauth' | 'baileys';
+export type WhatsappConnectionStatus = 'connected' | 'disconnected' | 'pending';
+
 export interface Organization extends Document<string>
 {
     _id: string;
@@ -11,6 +14,8 @@ export interface Organization extends Document<string>
     whatsappPhoneId?: string;
     whatsappToken?: string;
     whatsappBusinessId?: string;
+    whatsappAuthType?: WhatsappAuthType; // 'oauth' or 'baileys'
+    whatsappConnectionStatus?: WhatsappConnectionStatus; // 'connected', 'disconnected', or 'pending'
     isActive: boolean;
     settings: Record<string, unknown>;
     agentSettings?: AgentSettings;
@@ -47,6 +52,8 @@ const OrganizationSchema = new Schema<any>(
         whatsappPhoneId: { type: String },
         whatsappToken: { type: String },
         whatsappBusinessId: { type: String },
+        whatsappAuthType: { type: String, enum: [ 'oauth', 'baileys' ], default: 'oauth' },
+        whatsappConnectionStatus: { type: String, enum: [ 'connected', 'disconnected', 'pending' ], default: 'disconnected' },
         isActive: { type: Boolean, default: true },
         settings: { type: Schema.Types.Mixed, default: {} },
         ownerId: { type: String, required: true, ref: 'User' },

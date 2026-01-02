@@ -62,6 +62,8 @@ export class DocumentsService
         content?: string;
     }): Promise<DocumentEntity>
     {
+
+        console.log('\n\n\nUploading document with input:', input);
         const created = await DocumentModel.create({
             organizationId: input.organizationId,
             name: input.name,

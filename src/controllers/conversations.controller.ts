@@ -28,11 +28,6 @@ export async function getConversationMessages(req: Request, res: Response)
         const convo = await ConversationModel.findById(req.params.id).lean<any>();
 
 
-
-        console.log("\n\n\n\n", accessibleOrgIds);
-        console.log("convo", convo);
-
-
         if (!convo) return res.status(404).json({ error: 'Not found' });
         // if (!accessibleOrgIds.has(convo.organizationId)) return res.status(403).json({ error: 'Forbidden' });
 

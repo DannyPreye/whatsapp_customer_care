@@ -103,6 +103,17 @@ export async function getQRCode(organizationId: string): Promise<string>
         throw new Error('QR code not available');
     }
 
-
     return clientInfo.qrCode;
+}
+
+export async function updateOrganizationWhatsAppStatus(
+    organizationId: string,
+    authType: 'oauth' | 'baileys',
+    status: 'connected' | 'disconnected' | 'pending'
+): Promise<Organization | null>
+{
+    return updateOrganization(organizationId, {
+        whatsappAuthType: authType,
+        whatsappConnectionStatus: status
+    } as any);
 }

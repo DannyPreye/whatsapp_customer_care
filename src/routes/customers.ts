@@ -6,6 +6,8 @@ import
 {
     listCustomers,
     createCustomer,
+    bulkCreateCustomers,
+    outreachNewCustomers,
     getCustomer,
     updateCustomer,
     deleteCustomer,
@@ -23,7 +25,19 @@ const createSchema = z.object({
     email: z.string().email().optional(),
     language: z.string().optional(),
     metadata: z.record(z.string(), z.any()).optional(),
-    tags: z.array(z.string()).optional()
+    tags: z.array(z.string()).optional(),
+    hasStartedConversation: z.boolean().optional()
+});
+
+const bulkCreateSchema = z.object({
+    customers: z.array(createSchema.extend({
+        hasStartedConversation: z.boolean().optional()
+    })).min(1)
+});
+
+const outreachSchema = z.object({
+    organizationId: z.string(),
+    message: z.string().min(1).max(4096).optional()
 });
 
 const updateSchema = createSchema.partial();
@@ -42,6 +56,8 @@ const listConversationsQuery = z.object({
 
 router.get('/customers', authRequired, listCustomers);
 router.post('/customers', authRequired, validate(createSchema), createCustomer);
+router.post('/customers/bulk', authRequired, validate(bulkCreateSchema), bulkCreateCustomers);
+router.post('/customers/outreach', authRequired, validate(outreachSchema), outreachNewCustomers);
 router.get('/customers/:id', authRequired, getCustomer);
 router.put('/customers/:id', authRequired, validate(updateSchema), updateCustomer);
 router.delete('/customers/:id', authRequired, deleteCustomer);

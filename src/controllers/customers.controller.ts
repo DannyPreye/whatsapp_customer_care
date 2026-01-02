@@ -53,6 +53,44 @@ export async function createCustomer(req: Request, res: Response)
     }
 }
 
+export async function bulkCreateCustomers(req: Request, res: Response)
+{
+    try {
+        const { ownedOrgIds } = await getOrgContext(req);
+        const body = req.body as { customers?: Array<{ organizationId?: string; }>; };
+        const customers = Array.isArray(body?.customers) ? body.customers : null;
+
+        if (!customers) return res.status(400).json({ error: 'customers array is required' });
+        if (customers.length === 0) return res.status(400).json({ error: 'customers array cannot be empty' });
+
+        const missingOrg = customers.find((c) => !c.organizationId);
+        if (missingOrg) return res.status(400).json({ error: 'organizationId is required for all customers' });
+
+        const unauthorizedOrg = customers.find((c) => !ownedOrgIds.has(c.organizationId!));
+        if (unauthorizedOrg) return res.status(403).json({ error: 'Only organization owner can create customers' });
+
+        const data = await service.createMany(customers);
+        return created(res, data);
+    } catch {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+}
+
+export async function outreachNewCustomers(req: Request, res: Response)
+{
+    try {
+        const { ownedOrgIds } = await getOrgContext(req);
+        const { organizationId, message } = req.body as { organizationId?: string; message?: string; };
+        if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+        if (!ownedOrgIds.has(organizationId)) return res.status(403).json({ error: 'Only organization owner can trigger outreach' });
+
+        const result = await service.outreachNewCustomers(organizationId, message?.trim());
+        return ok(res, result);
+    } catch {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+}
+
 export async function getCustomer(req: Request, res: Response)
 {
     try {

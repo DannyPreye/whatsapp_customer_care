@@ -79,7 +79,7 @@ async function registerUser(data: RegisterPayload) {
   // Store tokens
   localStorage.setItem('accessToken', result.data.accessToken);
   localStorage.setItem('refreshToken', result.data.refreshToken);
-  
+
   return result.data;
 }
 ```
@@ -128,7 +128,7 @@ interface CreateOrgPayload {
 }
 
 async function createOrganization(
-  data: CreateOrgPayload, 
+  data: CreateOrgPayload,
   accessToken: string
 ) {
   const response = await fetch('/api/v1/organizations', {
@@ -219,9 +219,9 @@ interface OnboardingStatus {
   readyToUse: boolean;
 }
 
-function OnboardingDashboard({ 
-  organizationId, 
-  accessToken 
+function OnboardingDashboard({
+  organizationId,
+  accessToken
 }: {
   organizationId: string;
   accessToken: string;
@@ -242,16 +242,16 @@ function OnboardingDashboard({
   return (
     <div className="onboarding-dashboard">
       <h1>Welcome to WhatsApp Manager!</h1>
-      <ChecklistItem 
-        label="Account created" 
-        completed={status.accountCreated} 
+      <ChecklistItem
+        label="Account created"
+        completed={status.accountCreated}
       />
-      <ChecklistItem 
-        label="Organization created" 
-        completed={status.organizationCreated} 
+      <ChecklistItem
+        label="Organization created"
+        completed={status.organizationCreated}
       />
-      <ChecklistItem 
-        label="Connect WhatsApp" 
+      <ChecklistItem
+        label="Connect WhatsApp"
         completed={status.whatsappConnected}
         action={
           <button onClick={handleConnectWhatsApp}>
@@ -259,8 +259,8 @@ function OnboardingDashboard({
           </button>
         }
       />
-      <ChecklistItem 
-        label="Configure AI Agent" 
+      <ChecklistItem
+        label="Configure AI Agent"
         completed={status.agentConfigured}
         disabled={!status.whatsappConnected}
       />
@@ -284,7 +284,7 @@ function OnboardingDashboard({
 
 ```typescript
 async function initWhatsAppOAuth(
-  organizationId: string, 
+  organizationId: string,
   accessToken: string
 ) {
   const response = await fetch(
@@ -297,9 +297,9 @@ async function initWhatsAppOAuth(
   );
 
   if (!response.ok) throw new Error('Failed to init OAuth');
-  
+
   const { authUrl } = await response.json();
-  
+
   // Redirect user to Meta
   window.location.href = authUrl;
 }
@@ -350,7 +350,7 @@ async function handleOAuthCallback(code: string, state: string) {
   try {
     // Your backend handles the callback
     // The code exchange happens server-side
-    
+
     // For now, we have the state token
     // Next step is to fetch available accounts
     navigateToSelectAccount(state);
@@ -374,7 +374,7 @@ interface WhatsAppAccount {
 }
 
 async function fetchWhatsAppAccounts(
-  state: string, 
+  state: string,
   accessToken: string
 ): Promise<WhatsAppAccount[]> {
   const response = await fetch(
@@ -387,7 +387,7 @@ async function fetchWhatsAppAccounts(
   );
 
   if (!response.ok) throw new Error('Failed to fetch accounts');
-  
+
   const { wabaOptions } = await response.json();
   return wabaOptions;
 }
@@ -414,9 +414,9 @@ async function fetchWhatsAppAccounts(
 ### UI for Account Selection
 
 ```typescript
-function SelectWhatsAppAccount({ 
-  state, 
-  onSelectAccount 
+function SelectWhatsAppAccount({
+  state,
+  onSelectAccount
 }: {
   state: string;
   onSelectAccount: (accountId: string) => void;
@@ -455,8 +455,8 @@ function SelectWhatsAppAccount({
       <h2>Select WhatsApp Business Account</h2>
       <div className="account-list">
         {accounts.map((account) => (
-          <div 
-            key={account.id} 
+          <div
+            key={account.id}
             className="account-card"
             onClick={() => onSelectAccount(account.id)}
           >
@@ -500,7 +500,7 @@ async function fetchPhoneNumbers(
   );
 
   if (!response.ok) throw new Error('Failed to fetch phone numbers');
-  
+
   const { phoneOptions } = await response.json();
   return phoneOptions;
 }
@@ -529,7 +529,7 @@ async function fetchPhoneNumbers(
 ### UI for Phone Number Selection
 
 ```typescript
-function SelectPhoneNumber({ 
+function SelectPhoneNumber({
   state,
   wabaId,
   onSelectPhone
@@ -563,7 +563,7 @@ function SelectPhoneNumber({
       <h2>Select Phone Number</h2>
       <div className="phone-list">
         {phones.map((phone) => (
-          <div 
+          <div
             key={phone.id}
             className="phone-card"
             onClick={() => onSelectPhone(phone.id)}
@@ -681,7 +681,7 @@ function WhatsAppConnectedSuccess({ organization }: { organization: Organization
     <div className="success-screen">
       <div className="success-icon">✓</div>
       <h1>WhatsApp Connected!</h1>
-      
+
       <div className="connection-details">
         <p>Organization: <strong>{organization.name}</strong></p>
         <p>Phone Number: <strong>{organization.whatsappPhoneId}</strong></p>
@@ -771,25 +771,25 @@ function UserCreationFlow() {
         <RegisterPage onComplete={handleRegisterComplete} />
       )}
       {step === 'organization' && (
-        <OrganizationPage 
+        <OrganizationPage
           userId={user!.id}
-          onComplete={handleOrgCreate} 
+          onComplete={handleOrgCreate}
         />
       )}
       {step === 'onboarding' && (
-        <OnboardingDashboard 
+        <OnboardingDashboard
           organization={organization!}
           onConnectWhatsApp={handleConnectWhatsApp}
         />
       )}
       {step === 'account-select' && (
-        <SelectWhatsAppAccount 
+        <SelectWhatsAppAccount
           state={oauthState!}
           onSelectAccount={handleAccountSelect}
         />
       )}
       {step === 'phone-select' && (
-        <SelectPhoneNumber 
+        <SelectPhoneNumber
           state={oauthState!}
           wabaId={selectedWaba!}
           onSelectPhone={handlePhoneSelect}
@@ -828,14 +828,14 @@ async function withErrorHandling<T>(
     return await fn();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    
+
     console.error('Operation failed:', message);
-    
+
     // Show user-friendly error message
     showErrorNotification(message);
-    
+
     if (onError) onError(error as Error);
-    
+
     return null;
   }
 }

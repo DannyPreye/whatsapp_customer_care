@@ -1,5 +1,5 @@
 import http from 'http';
-import { createApp } from './app';
+import { createApp, restoreBaileysConnections } from './app';
 import { config } from './config';
 import { logger } from './logger';
 import { connectMongo, disconnectMongo } from './db/mongo';
@@ -14,6 +14,9 @@ async function main()
     {
         logger.info(`Server listening on port ${config.env.PORT}`);
     });
+
+    // Restore Baileys connections for organizations that were connected before restart
+    await restoreBaileysConnections();
 
     // Start follow-up worker
     const followUpWorker = new FollowUpWorker();

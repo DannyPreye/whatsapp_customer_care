@@ -1,8 +1,13 @@
 import { CustomerModel, Customer } from '../models/customer.model';
 import { ConversationModel } from '../models/conversation.model';
+import { WhatsAppService } from './whatsappService.service';
+import { OutreachAgent } from './agents/outreach.agent';
 
 export class CustomersService
 {
+    private whatsappService = new WhatsAppService();
+    private outreachAgent = new OutreachAgent();
+
     async listByOrganizations(orgIds: string[]): Promise<Customer[]>
     {
         if (!orgIds || orgIds.length === 0) return [];
@@ -18,6 +23,14 @@ export class CustomersService
     {
         const created = await CustomerModel.create(input);
         return created.toJSON() as any;
+    }
+
+    async createMany(inputs: Partial<Customer>[] = []): Promise<Customer[]>
+    {
+        if (inputs.length === 0) return [];
+        const created = await CustomerModel.insertMany(inputs || []);
+        const normalized = (created || []).map((doc) => (typeof (doc as any)?.toJSON === 'function' ? (doc as any).toJSON() : doc) as any);
+        return normalized;
     }
 
     async getById(id: string): Promise<Customer | null>
@@ -93,5 +106,25 @@ export class CustomersService
     async unblock(id: string)
     {
         return CustomerModel.findByIdAndUpdate(id, { isBlocked: false }, { new: true }).lean();
+    }
+
+    async outreachNewCustomers(organizationId: string, messageHint?: string)
+    {
+        const targets = await CustomerModel.find({ organizationId, hasStartedConversation: false, isBlocked: { $ne: true } }).lean();
+        for (const c of targets) {
+            try {
+                await this.outreachAgent.handleOutreach({
+                    organizationId,
+                    customerId: c._id,
+                    whatsappNumber: c.whatsappNumber,
+                    customerName: c.name,
+                    messageHint
+                });
+                await CustomerModel.updateOne({ _id: c._id }, { $set: { hasStartedConversation: true } });
+            } catch (err) {
+                console.error('[Outreach] Failed to send to', c._id, err);
+            }
+        }
+        return { count: targets.length };
     }
 }

@@ -36,11 +36,23 @@ router.post('/', validate(baseSchema), orgController.create);
 router.get('/:id', orgController.getById);
 router.put('/:id', validate(updateSchema), orgController.update);
 router.delete('/:id', orgController.remove);
+
+// WhatsApp OAuth flow
 router.get('/:id/whatsapp/init-oauth', orgController.initWhatsAppOAuth);
 router.get('/whatsapp/callback', orgController.handleWhatsAppCallback);
 router.get('/whatsapp/accounts', orgController.getWhatsAppOptions);
 router.get('/whatsapp/phone-numbers', orgController.getPhoneNumberOptions);
 router.post('/:id/whatsapp/save-config', orgController.saveWhatsAppConfig);
+
+// WhatsApp Baileys flow
+router.post('/:id/whatsapp/init-baileys', orgController.initBaileysConnection);
+router.get('/:id/whatsapp/qrcode', orgController.getBaileysQRCode);
+
+// WhatsApp general endpoints
+router.delete('/:id/whatsapp/disconnect', orgController.disconnectWhatsApp);
+router.get('/:id/whatsapp/status', orgController.checkWhatsAppStatus);
+
+// Organization settings
 router.get('/:id/settings', orgController.getSettings);
 router.put('/:id/settings', validate(z.record(z.string(), z.any())), orgController.updateSettings);
 router.get('/:id/agent-settings', orgController.getAgentSettings);

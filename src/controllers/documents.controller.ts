@@ -22,7 +22,9 @@ export async function uploadDocument(req: Request, res: Response)
     if (!file) return res.status(400).json({ error: 'file is required' });
 
     const user = (req as any).user;
-    if (!user || !user.id) return res.status(401).json({ error: 'Unauthorized' });
+
+    // console.log('\n\n\nUploading document for user:', user);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
     const upload = await cloudinaryService.uploadBuffer(file.buffer, file.originalname);
     const payload = {
@@ -33,7 +35,7 @@ export async function uploadDocument(req: Request, res: Response)
         fileUrl: upload.url,
         fileSize: upload.bytes,
         mimeType: file.mimetype,
-        uploadedBy: user.id,
+        uploadedBy: user.sub,
         content: req.body.content
     } as any;
     const data = await service.upload(payload);

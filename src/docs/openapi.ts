@@ -48,6 +48,8 @@ const definition: OpenAPIV3.Document = {
                     whatsappPhoneId: { type: 'string', nullable: true },
                     whatsappToken: { type: 'string', nullable: true },
                     whatsappBusinessId: { type: 'string', nullable: true },
+                    whatsappAuthType: { type: 'string', enum: [ 'oauth', 'baileys' ], nullable: true, description: 'Authentication method used: oauth or baileys' },
+                    whatsappConnectionStatus: { type: 'string', enum: [ 'connected', 'disconnected', 'pending' ], nullable: true, description: 'Current WhatsApp connection status' },
                     isActive: { type: 'boolean' },
                     ownerId: { type: 'string' },
                     settings: { type: 'object', additionalProperties: true },
@@ -190,6 +192,7 @@ const definition: OpenAPIV3.Document = {
                     metadata: { type: 'object', additionalProperties: true },
                     tags: { type: 'array', items: { type: 'string' } },
                     isBlocked: { type: 'boolean' },
+                    hasStartedConversation: { type: 'boolean', description: 'True once the customer has at least one conversation' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' }
                 },
@@ -204,7 +207,8 @@ const definition: OpenAPIV3.Document = {
                     email: { type: 'string' },
                     language: { type: 'string' },
                     metadata: { type: 'object', additionalProperties: true },
-                    tags: { type: 'array', items: { type: 'string' } }
+                    tags: { type: 'array', items: { type: 'string' } },
+                    hasStartedConversation: { type: 'boolean', description: 'Optional flag to mark if the customer has started a conversation', default: false }
                 },
                 required: [ 'organizationId', 'whatsappNumber' ]
             },
@@ -790,6 +794,112 @@ const definition: OpenAPIV3.Document = {
                 }
             }
         },
+        '/api/v1/organizations/{id}/whatsapp/init-baileys': {
+            post: {
+                tags: [ 'Organizations' ],
+                summary: 'Initialize Baileys/QR Code connection (Alternative to OAuth)',
+                description: 'Initiates WhatsApp connection using Baileys library with QR code scanning. Sets whatsappAuthType to "baileys" and whatsappConnectionStatus to "pending".',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'Baileys connection initialized, QR code ready',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean' },
+                                        message: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { description: 'WhatsApp already connected' },
+                    404: { description: 'Organization not found' }
+                }
+            }
+        },
+        '/api/v1/organizations/{id}/whatsapp/qrcode': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Get Baileys QR Code for scanning',
+                description: 'Retrieves the QR code that the user needs to scan with WhatsApp. Call after initializing Baileys connection.',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'QR code generated',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean' },
+                                        qrCode: { type: 'string', description: 'QR code data/image' },
+                                        message: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { description: 'QR code not available' },
+                    404: { description: 'Organization not found' }
+                }
+            }
+        },
+        '/api/v1/organizations/{id}/whatsapp/disconnect': {
+            delete: {
+                tags: [ 'Organizations' ],
+                summary: 'Disconnect WhatsApp',
+                description: 'Disconnects WhatsApp from the organization. Works for both OAuth and Baileys connections. Sets whatsappConnectionStatus to "disconnected".',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'WhatsApp disconnected successfully',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean' },
+                                        message: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    404: { description: 'Organization not found' }
+                }
+            }
+        },
+        '/api/v1/organizations/{id}/whatsapp/status': {
+            get: {
+                tags: [ 'Organizations' ],
+                summary: 'Check WhatsApp Connection Status',
+                description: 'Returns the current authentication type and connection status for the organization\'s WhatsApp integration.',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                responses: {
+                    200: {
+                        description: 'WhatsApp status retrieved',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean' },
+                                        authType: { type: 'string', enum: [ 'oauth', 'baileys' ], description: 'Authentication method used' },
+                                        connectionStatus: { type: 'string', enum: [ 'connected', 'disconnected', 'pending' ], description: 'Current connection status' },
+                                        isConnected: { type: 'boolean', description: 'Whether WhatsApp is currently connected' },
+                                        isDisconnected: { type: 'boolean', description: 'Whether WhatsApp is currently disconnected' }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    404: { description: 'Organization not found' }
+                }
+            }
+        },
         '/api/v1/organizations/oauth/meta/callback': {
             get: {
                 tags: [ 'Organizations' ],
@@ -910,6 +1020,35 @@ const definition: OpenAPIV3.Document = {
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateCustomerInput' } } } },
                 responses: {
                     201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Customer' } } } } } },
+                    400: { description: 'Bad Request' },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' }
+                }
+            }
+        },
+        '/api/v1/customers/bulk': {
+            post: {
+                tags: [ 'Customers' ],
+                summary: 'Bulk create customers',
+                description: 'Owner-only: Trigger AI outreach to all new customers (hasStartedConversation=false). Agent crafts message from knowledge base and sends via WhatsApp.',
+                security: [ { bearerAuth: [] } ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    organizationId: { type: 'string' },
+                                    message: { type: 'string', description: 'Optional hint or theme for the outreach message', maxLength: 4096 }
+                                },
+                                required: [ 'organizationId' ]
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    200: { description: 'Triggered', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { count: { type: 'integer' } } } } } } } },
                     400: { description: 'Bad Request' },
                     401: { description: 'Unauthorized' },
                     403: { description: 'Forbidden' }

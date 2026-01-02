@@ -4,6 +4,7 @@ import { ok, created, noContent } from '../utils/response';
 import crypto from 'crypto';
 import { WhatsappAuthService } from '../services/whatsappAuth.service';
 import * as oauthStateService from '../services/oauthState.service';
+import { baileysManager } from '../services/baileysManager.service';
 
 export async function list(_req: Request, res: Response)
 {
@@ -213,11 +214,13 @@ export async function saveWhatsAppConfig(req: Request, res: Response)
         const org = await orgService.getOrganizationById(organizationId);
         if (!org) return res.status(404).json({ error: 'Organization not found' });
 
-        // Save WhatsApp configuration
+        // Save WhatsApp configuration with OAuth auth type
         const updated = await orgService.updateOrganization(organizationId, {
             whatsappToken: accessToken,
             whatsappBusinessId: wabaId,
-            whatsappPhoneId: phoneNumberId
+            whatsappPhoneId: phoneNumberId,
+            whatsappAuthType: 'oauth',
+            whatsappConnectionStatus: 'connected'
         } as any);
 
         // Cleanup state
@@ -231,6 +234,130 @@ export async function saveWhatsAppConfig(req: Request, res: Response)
     } catch (error: any) {
         console.error('saveWhatsAppConfig error', error?.message);
         return res.status(500).json({ error: error?.message || 'Failed to save WhatsApp configuration' });
+    }
+}
+
+/**
+ * Initialize WhatsApp connection using Baileys (QR code method)
+ */
+export async function initBaileysConnection(req: Request, res: Response)
+{
+    try {
+        const organizationId = req.params.id;
+
+        console.log(`[Controller] Initializing Baileys connection for org: ${organizationId}`);
+
+        const org = await orgService.getOrganizationById(organizationId);
+        if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+        console.log(`[Controller] Organization found, creating Baileys client...`);
+
+        // Create Baileys client
+        await orgService.connectWhatsApp(organizationId);
+
+        // Update organization to use Baileys auth type
+        await orgService.updateOrganizationWhatsAppStatus(organizationId, 'baileys', 'pending');
+
+        console.log(`[Controller] Baileys client created, status updated to pending`);
+
+        // Wait a bit for QR code to be generated
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const clientInfo = baileysManager.getClient(organizationId);
+        if (!clientInfo?.qrCode) {
+            console.log(`[Controller] QR code not yet available, will retry`);
+            return res.status(202).json({
+                message: 'Baileys connection initializing. QR code will be available shortly.',
+                retryIn: 3000
+            });
+        }
+
+        console.log(`[Controller] QR code generated successfully`);
+
+        return res.json({
+            success: true,
+            message: 'Baileys connection initialized, scan the QR code',
+            qrCode: clientInfo.qrCode
+        });
+    } catch (error: any) {
+        console.error('[Controller] Error initializing Baileys connection:', error);
+        return res.status(500).json({ error: error?.message || 'Failed to initialize Baileys connection' });
+    }
+}
+
+/**
+ * Get QR code for Baileys connection
+ */
+export async function getBaileysQRCode(req: Request, res: Response)
+{
+    try {
+        const organizationId = req.params.id;
+        const qrCode = await orgService.getQRCode(organizationId);
+
+        return res.json({
+            success: true,
+            qrCode: qrCode,
+            message: 'Scan this QR code with WhatsApp to connect'
+        });
+    } catch (error: any) {
+        console.error('getBaileysQRCode error', error?.message);
+        return res.status(500).json({ error: error?.message || 'Failed to get QR code' });
+    }
+}
+
+/**
+ * Disconnect WhatsApp (works for both OAuth and Baileys)
+ */
+export async function disconnectWhatsApp(req: Request, res: Response)
+{
+    try {
+        const organizationId = req.params.id;
+        const org = await orgService.getOrganizationById(organizationId);
+        if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+        // Disconnect Baileys client if it exists
+        const clientInfo = baileysManager.getClient(organizationId);
+        if (clientInfo) {
+            await baileysManager.disconnectClient(organizationId);
+        }
+
+        // Update organization status
+        await orgService.updateOrganization(organizationId, {
+            whatsappConnectionStatus: 'disconnected'
+        } as any);
+
+        return res.json({
+            success: true,
+            message: 'WhatsApp disconnected successfully'
+        });
+    } catch (error: any) {
+        console.error('disconnectWhatsApp error', error?.message);
+        return res.status(500).json({ error: error?.message || 'Failed to disconnect WhatsApp' });
+    }
+}
+
+/**
+ * Check WhatsApp connection status
+ */
+export async function checkWhatsAppStatus(req: Request, res: Response)
+{
+    try {
+        const organizationId = req.params.id;
+        const org = await orgService.getOrganizationById(organizationId);
+        if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+        const isDisconnected = baileysManager.isClientDisconnected(organizationId);
+
+        return res.json({
+            success: true,
+            authType: (org as any).whatsappAuthType || 'oauth',
+            connectionStatus: (org as any).whatsappConnectionStatus || 'disconnected',
+            isConnected: !isDisconnected,
+            isDisconnected: isDisconnected
+        });
+    } catch (error: any) {
+        console.error('checkWhatsAppStatus error', error?.message);
+        return res.status(500).json({ error: error?.message || 'Failed to check WhatsApp status' });
     }
 }
 

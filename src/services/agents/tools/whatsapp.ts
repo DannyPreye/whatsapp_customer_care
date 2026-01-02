@@ -2,7 +2,9 @@ import { tool } from "langchain";
 import { ConversationModel } from "../../../models/conversation.model";
 import { MessageModel } from "../../../models/message.model";
 import { CustomerModel } from "../../../models/customer.model";
+import { OrganizationModel } from "../../../models/organization.model";
 import { WhatsAppService } from "../../whatsappService.service";
+import { baileysManager } from "../../baileysManager.service";
 import z from "zod";
 import { DocumentsService } from "../../documents.service";
 import { DocumentProcessorService } from "../../documentProcessor.service";
@@ -26,21 +28,48 @@ export class WhatsappToolService
     sendMessageTool()
     {
         return tool(
-            (input: { to: string; message: string; }) =>
+            async (input: { to: string; message: string; organizationId?: string; }) =>
             {
                 console.log("Sending WhatsApp message", input);
-                return this.whatsappService.sendMessage(
-                    input.to,
-                    input.message
-                );
 
+
+                try {
+                    // If organizationId is provided, check auth type and route accordingly
+                    if (input.organizationId) {
+                        const org = await OrganizationModel.findById(input.organizationId).lean();
+
+                        if (!org) {
+                            console.error(`Organization not found: ${input.organizationId}`);
+                            throw new Error(`Organization not found: ${input.organizationId}`);
+                        }
+
+                        console.log(`[Agent Tool] Sending via ${org.whatsappAuthType} for org ${input.organizationId}`);
+
+                        // Route based on organization's auth type
+                        if (org.whatsappAuthType === 'baileys') {
+                            console.log(`[Agent Tool] Using Baileys to send message to ${input.to}`);
+                            return await baileysManager.sendMessage(input.organizationId, input.to, input.message);
+                        } else {
+                            console.log(`[Agent Tool] Using OAuth WhatsAppService to send message to ${input.to}`);
+                            return await this.whatsappService.sendMessage(input.to, input.message, input.organizationId);
+                        }
+                    } else {
+                        // Fallback to default WhatsAppService if no organizationId
+                        console.log(`[Agent Tool] No organizationId provided, using default WhatsAppService`);
+                        return await this.whatsappService.sendMessage(input.to, input.message);
+                    }
+                } catch (error) {
+                    // console.error(`Error sending WhatsApp message:`, error);
+                    throw error;
+                }
             },
             {
                 name: "send_whatsapp_message",
                 description: "Sends a WhatsApp message to a specified phone number. Always use this tool to send messages.",
                 schema: z.object({
                     to: z.string().min(10).max(15).describe("The recipient's phone number in international format."),
-                    message: z.string().min(1).max(4096).describe("The content of the WhatsApp message to be sent.")
+                    message: z.string().min(1).max(4096).describe("The content of the WhatsApp message to be sent."),
+                    organizationId: z.string().describe("The organization ID to determine the sending method (OAuth or Baileys). Please always provide this.")
                 })
             }
         );

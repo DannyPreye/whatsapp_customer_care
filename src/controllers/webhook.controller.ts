@@ -96,6 +96,11 @@ export async function receiveWhatsApp(req: Request, res: Response)
                             } as any);
                             const createdDoc = Array.isArray(created) ? (created as any)[ 0 ] : created;
                             conversationId = (createdDoc as any)._id as string;
+
+                            // Mark customer as having started a conversation
+                            if (customer?._id) {
+                                await CustomerModel.updateOne({ _id: customer._id }, { $set: { hasStartedConversation: true } });
+                            }
                         }
 
                         console.log("Resolved conversation ID:", conversationId);
@@ -108,8 +113,8 @@ export async function receiveWhatsApp(req: Request, res: Response)
                                 name: customer?.name,
                                 whatsappNumber: customer?.whatsappNumber
                             },
-
-                            customerMessage: text
+                            customerMessage: text,
+                            authType: 'oauth' // Mark as OAuth for routing
                         };
 
                         const salesAgent = new SalesAgent();
