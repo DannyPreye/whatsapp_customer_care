@@ -17,7 +17,6 @@ import
 const router = Router();
 
 const uploadSchema = z.object({
-    organizationId: z.string(),
     name: z.string().optional(),
     content: z.string().optional()
 });
@@ -47,12 +46,12 @@ const upload = multer({
     },
 });
 
-router.post('/documents/upload', authRequired, upload.single('file'), validate(uploadSchema), uploadDocument);
-router.get('/documents', authRequired, listDocuments);
-router.get('/documents/:id', authRequired, getDocument);
-router.delete('/documents/:id', authRequired, deleteDocument);
-router.post('/documents/:id/reprocess', authRequired, reprocessDocument);
-router.get('/documents/status', authRequired, documentsStatus);
-router.post('/documents/bulk-upload', authRequired, validate(z.object({ items: z.array(uploadSchema) })), bulkUploadDocuments);
+router.post('/organizations/:organizationId/documents/upload', authRequired, upload.single('file'), uploadDocument);
+router.get('/organizations/:organizationId/documents', authRequired, listDocuments);
+router.get('/organizations/:organizationId/documents/:id', authRequired, getDocument);
+router.delete('/organizations/:organizationId/documents/:id', authRequired, deleteDocument);
+router.post('/organizations/:organizationId/documents/:id/reprocess', authRequired, reprocessDocument);
+router.get('/organizations/:organizationId/documents/status', authRequired, documentsStatus);
+router.post('/organizations/:organizationId/documents/bulk-upload', authRequired, validate(z.object({ items: z.array(uploadSchema) })), bulkUploadDocuments);
 
 export default router;

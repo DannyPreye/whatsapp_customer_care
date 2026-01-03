@@ -26,9 +26,12 @@ export async function uploadDocument(req: Request, res: Response)
     // console.log('\n\n\nUploading document for user:', user);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
     const upload = await cloudinaryService.uploadBuffer(file.buffer, file.originalname);
     const payload = {
-        organizationId: req.body.organizationId,
+        organizationId: organizationId,
         name: req.body.name || file.originalname,
         originalName: file.originalname,
         type: getDocumentTypeFromMimeType(file.mimetype),
@@ -44,41 +47,63 @@ export async function uploadDocument(req: Request, res: Response)
     return created(res, data);
 }
 
-export async function listDocuments(_req: Request, res: Response)
+export async function listDocuments(req: Request, res: Response)
 {
-    const data = await service.list();
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
+    const data = await service.list(organizationId);
     return ok(res, data);
 }
 
 export async function getDocument(req: Request, res: Response)
 {
-    const data = await service.getById(req.params.id);
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
+    const data = await service.getById(req.params.id, organizationId);
     if (!data) return res.status(404).json({ error: 'Not found' });
     return ok(res, data);
 }
 
 export async function deleteDocument(req: Request, res: Response)
 {
-    const success = await service.remove(req.params.id);
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
+    const success = await service.remove(req.params.id, organizationId);
     if (!success) return res.status(404).json({ error: 'Not found' });
     return noContent(res);
 }
 
 export async function reprocessDocument(req: Request, res: Response)
 {
-    const data = await service.reprocess(req.params.id);
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
+    const data = await service.reprocess(req.params.id, organizationId);
     if (!data) return res.status(404).json({ error: 'Not found' });
     return ok(res, data);
 }
 
-export async function documentsStatus(_req: Request, res: Response)
+export async function documentsStatus(req: Request, res: Response)
 {
-    const data = await service.status();
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
+    const data = await service.status(organizationId);
     return ok(res, data);
 }
 
 export async function bulkUploadDocuments(req: Request, res: Response)
 {
-    const data = await service.bulkUpload(req.body.items || []);
+    const organizationId = req.params.organizationId;
+    if (!organizationId) return res.status(400).json({ error: 'organizationId is required' });
+
+    const items = (req.body.items || []).map((item: any) => ({
+        ...item,
+        organizationId: organizationId
+    }));
+    const data = await service.bulkUpload(items);
     return created(res, data);
 }

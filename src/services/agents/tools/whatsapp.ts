@@ -3,15 +3,16 @@ import { ConversationModel } from "../../../models/conversation.model";
 import { MessageModel } from "../../../models/message.model";
 import { CustomerModel } from "../../../models/customer.model";
 import { OrganizationModel } from "../../../models/organization.model";
+import { IntegrationModel } from "../../../models/integration.model";
 import { WhatsAppService } from "../../whatsappService.service";
 import { baileysManager } from "../../baileysManager.service";
 import z from "zod";
-import { DocumentsService } from "../../documents.service";
-import { DocumentProcessorService } from "../../documentProcessor.service";
 import { VectorStoreService } from "../../pinecone.service";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { config } from "../../../config";
 import { Direction, MessageStatus, MessageType } from "../../../models/enums";
+import { ChatOpenAI, OpenAI } from "@langchain/openai";
+import { IntegrationFactory } from "../../integrations/integration.factory";
 
 
 export class WhatsappToolService
@@ -133,22 +134,30 @@ export class WhatsappToolService
         return tool(async (input: { limit: number; conversationId: string; }) =>
         {
 
-            console.log("Fetching recent WhatsApp messages", input);
             const messages = await MessageModel.find({
-                conversationId: input.conversationId,
-                direction: 'inbound'
+                conversationId: input.conversationId
             })
                 .sort({ createdAt: -1 })
                 .limit(input.limit)
                 .lean();
 
-            return messages.map(msg => msg.content);
+            // Return a concise transcript with direction and timestamp context
+            const cleanMessages = messages.map(msg =>
+            {
+                const when = msg.createdAt instanceof Date ? msg.createdAt.toISOString() : String(msg.createdAt);
+                const dir = msg.direction === Direction.INBOUND ? 'IN' : 'OUT';
+                return `[${when}] ${dir}: ${msg.content}`;
+            });
+
+            console.log("Fetched messages:", cleanMessages);
+
+            return cleanMessages;
         }, {
             name: "fetch_recent_whatsapp_messages",
-            description: "Fetches recent WhatsApp messages from customers.",
+            description: "Fetches recent WhatsApp messages (inbound and outbound) for the conversation, newest first.",
             schema: z.object({
                 limit: z.number().min(1).max(100).describe("The number of recent messages to fetch."),
-                conversationId: z.string().describe("The ID of the organization to fetch messages for.")
+                conversationId: z.string().describe("The conversation id to fetch messages for.")
             })
         });
     }
@@ -167,7 +176,7 @@ export class WhatsappToolService
 
                 // Convert results to plain text instead of returning objects
                 if (!results || results.length === 0) {
-                    return "No relevant information found in the knowledge base.";
+                    return "No relevant information found in the knowledge base. Tell the customer you'll find out and ask a quick clarifying question.";
                 }
 
                 // Format the results as a readable string
@@ -178,10 +187,10 @@ ${result.content}
 ---`;
                 }).join('\n\n');
 
-                return `Found ${results.length} relevant document(s):\n\n${formattedResults}`;
+                return `Found ${results.length} relevant document(s). Summarize briefly for the customer in natural WhatsApp style, then ask a next-step question.\n\n${formattedResults}`;
             } catch (error) {
                 console.error('Error searching knowledge base:', error);
-                return "Sorry, I encountered an error searching the knowledge base.";
+                return "Sorry, I hit an error searching the knowledge base. Let the customer know you'll check and get back with the right info.";
             }
         }, {
             name: "get_whatsapp_knowledge_base",
@@ -290,66 +299,106 @@ ${result.content}
 
     assessProspectTool()
     {
-        return tool(async (input: { customerId: string; organizationId: string; recentLimit?: number; }) =>
+        return tool(async (input: { customerId: string; organizationId: string; conversationId?: string; recentLimit?: number; }) =>
         {
             const recentLimit = input.recentLimit ?? 10;
 
-            const conversation = await ConversationModel.findOne({
-                customerId: input.customerId,
-                organizationId: input.organizationId
-            }).lean();
+            // Use provided conversationId or look it up
+            let conversationId = input.conversationId;
+            if (!conversationId) {
+                const conversation = await ConversationModel.findOne({
+                    customerId: input.customerId,
+                    organizationId: input.organizationId
+                }).lean();
 
-            if (!conversation) {
-                await CustomerModel.updateOne(
-                    { _id: input.customerId, organizationId: input.organizationId },
-                    { $set: { lifecycleStage: 'unknown', prospectScore: 0 } }
-                );
-                return "No conversation found. Classification: unknown.";
+                if (!conversation) {
+                    await CustomerModel.updateOne(
+                        { _id: input.customerId, organizationId: input.organizationId },
+                        { $set: { lifecycleStage: 'unknown', prospectScore: 0 } }
+                    );
+                    return "No conversation found. Classification: unknown.";
+                }
+                conversationId = (conversation as any)._id.toString();
             }
 
             const messages = await MessageModel.find({
-                conversationId: conversation._id,
-                direction: 'inbound'
+                conversationId,
+                direction: Direction.INBOUND // Only analyze customer messages
             }).sort({ createdAt: -1 }).limit(recentLimit).lean();
 
             const text = messages.map(m => m.content).join('\n');
 
             // Heuristic baseline classification
-            const keywords = [ 'price', 'quote', 'buy', 'purchase', 'interested', 'demo', 'trial', 'cost', 'plan' ];
-            let hits = 0;
-            const lower = (text || '').toLowerCase();
-            for (const k of keywords) if (lower.includes(k)) hits++;
-            let lifecycleStage: 'unknown' | 'lead' | 'prospect' | 'customer' | 'churnRisk' = 'unknown';
-            let prospectScore = Math.min(1, hits / 5);
-            let rationale = hits > 0 ? `Matched intent keywords: ${keywords.filter(k => lower.includes(k)).join(', ')}` : 'insufficient data';
-            let suggestedFollowUpDays = hits > 0 ? 2 : 0;
+            const buyingKeywords = [ 'price', 'quote', 'buy', 'purchase', 'cost', 'how much' ];
+            const interestKeywords = [ 'interested', 'demo', 'trial', 'learn more', 'tell me more' ];
+            const urgencyKeywords = [ 'today', 'now', 'asap', 'urgent', 'quickly', 'soon' ];
 
-            // Optional: try Gemini for refinement, tolerate failures
-            try {
-                if (config.env.GOOGLE_API_KEY) {
-                    const model = new ChatGoogleGenerativeAI({ model: 'gemini-flash-latest', temperature: 0.2 });
-                    const prompt = [
-                        'Classify whether the customer is a prospect based on the messages. Return JSON with keys lifecycleStage(one of: unknown, lead, prospect, customer, churnRisk), prospectScore(0..1), rationale(string), suggestedFollowUpDays(integer).',
-                        'Messages:',
-                        text || '(no messages)'
-                    ].join('\n');
+            let buyingHits = 0;
+            let interestHits = 0;
+            let urgencyHits = 0;
+            const lower = (text || '').toLowerCase();
+
+            for (const k of buyingKeywords) if (lower.includes(k)) buyingHits++;
+            for (const k of interestKeywords) if (lower.includes(k)) interestHits++;
+            for (const k of urgencyKeywords) if (lower.includes(k)) urgencyHits++;
+
+            let lifecycleStage: 'unknown' | 'lead' | 'prospect' | 'customer' | 'churnRisk' = 'unknown';
+            let prospectScore = Math.min(1, (buyingHits * 0.3 + interestHits * 0.15 + urgencyHits * 0.1));
+            let rationale = buyingHits + interestHits > 0
+                ? `Matched keywords - Buying: ${buyingHits}, Interest: ${interestHits}, Urgency: ${urgencyHits}`
+                : 'No strong buying signals detected';
+            let suggestedFollowUpDays = buyingHits > 0 ? 1 : (interestHits > 0 ? 2 : 7);
+
+            // Use AI for better classification if messages exist
+            if (text && text.length > 10) {
+                try {
+                    const model = new ChatOpenAI({
+                        temperature: 0.2, // Low temperature for consistent classification
+                        model: "gpt-4o",
+                        modelKwargs: {
+                            response_format: { type: "json_object" }
+                        }
+                    });
+
+                    const prompt = `Analyze these WhatsApp messages from a customer and classify their intent. Return ONLY valid JSON with these exact keys:
+{
+  "lifecycleStage": "unknown" | "lead" | "prospect" | "customer" | "churnRisk",
+  "prospectScore": 0.0 to 1.0,
+  "rationale": "brief explanation",
+  "suggestedFollowUpDays": integer (1-14)
+}
+
+Classification criteria:
+- unknown: No clear intent (score: 0-0.2)
+- lead: Showing interest, asking questions (score: 0.2-0.5)
+- prospect: Clear buying signals, asking about pricing/demos (score: 0.5-0.8)
+- customer: Already purchased or ready to buy (score: 0.8-1.0)
+- churnRisk: Existing customer showing dissatisfaction
+
+Customer messages:
+${text}`;
+
                     const resp = await model.invoke([ { role: 'user', content: prompt } as any ]);
-                    const raw = typeof (resp as any)?.content === 'string' ? (resp as any).content : JSON.stringify((resp as any)?.content);
-                    const match = raw?.match(/\{[\s\S]*\}/)?.[ 0 ];
-                    if (match) {
-                        const parsed = JSON.parse(match);
-                        lifecycleStage = parsed.lifecycleStage ?? lifecycleStage;
-                        prospectScore = typeof parsed.prospectScore === 'number' ? parsed.prospectScore : prospectScore;
-                        rationale = parsed.rationale ?? rationale;
-                        suggestedFollowUpDays = typeof parsed.suggestedFollowUpDays === 'number' ? parsed.suggestedFollowUpDays : suggestedFollowUpDays;
-                    }
+                    const content = typeof (resp as any)?.content === 'string'
+                        ? (resp as any).content
+                        : JSON.stringify((resp as any)?.content);
+
+                    const parsed = JSON.parse(content);
+
+                    if (parsed.lifecycleStage) lifecycleStage = parsed.lifecycleStage;
+                    if (typeof parsed.prospectScore === 'number') prospectScore = Math.min(1, Math.max(0, parsed.prospectScore));
+                    if (parsed.rationale) rationale = parsed.rationale;
+                    if (typeof parsed.suggestedFollowUpDays === 'number') suggestedFollowUpDays = parsed.suggestedFollowUpDays;
+                } catch (e) {
+                    console.warn('AI classification failed, using heuristic:', e);
+                    // Fall back to heuristic values already calculated
                 }
-            } catch (e) {
-                console.warn('Gemini classification failed, using heuristic.', e);
             }
 
-            if (prospectScore >= 0.6) lifecycleStage = 'prospect';
-            else if (prospectScore > 0.2) lifecycleStage = 'lead';
+            // Final stage determination based on score
+            if (prospectScore >= 0.8) lifecycleStage = 'customer';
+            else if (prospectScore >= 0.5) lifecycleStage = 'prospect';
+            else if (prospectScore >= 0.2) lifecycleStage = 'lead';
 
             await CustomerModel.updateOne(
                 { _id: input.customerId, organizationId: input.organizationId },
@@ -363,14 +412,15 @@ ${result.content}
                 }
             );
 
-            return `Classification: ${lifecycleStage} (score ${prospectScore.toFixed(2)}). ${rationale}`;
+            return `Customer assessed: ${lifecycleStage} (score: ${prospectScore.toFixed(2)}). ${rationale}. Follow-up in ${suggestedFollowUpDays} days.`;
         }, {
             name: 'assess_customer_prospect',
-            description: 'Classify if a customer is a prospect based on recent inbound messages and persist results.',
+            description: 'REQUIRED: Analyze customer buying intent from conversation messages and update their lifecycle stage. Must be called after every customer interaction.',
             schema: z.object({
                 customerId: z.string().describe('The customer id.'),
                 organizationId: z.string().describe('The organization id.'),
-                recentLimit: z.number().min(1).max(50).optional()
+                conversationId: z.string().optional().describe('The conversation id (if known, avoids lookup).'),
+                recentLimit: z.number().min(1).max(50).optional().describe('Number of recent messages to analyze (default: 10).')
             })
         });
     }
@@ -398,5 +448,121 @@ ${result.content}
                 notes: z.string().max(500).optional()
             })
         });
+    }
+
+    shareIntegrationResourceTool()
+    {
+        return tool(
+            async (input: {
+                customerId: string;
+                organizationId: string;
+                conversationId: string;
+                integrationType: string;
+                resourceType: string;
+                customMessage?: string;
+            }) => {
+                console.log("Sharing integration resource", input);
+
+                try {
+                    // Find active integration of the requested type
+                    const integration = await IntegrationModel.findOne({
+                        organizationId: input.organizationId,
+                        type: input.integrationType,
+                        isActive: true
+                    }).lean();
+
+                    if (!integration) {
+                        return `No active ${input.integrationType} integration found. Organization needs to connect it first.`;
+                    }
+
+                    // Get the appropriate service for this integration
+                    const integrationService = IntegrationFactory.getIntegrationService(integration as any);
+
+                    // Verify integration still works
+                    const isValid = await integrationService.testConnection();
+                    if (!isValid) {
+                        return `${input.integrationType} integration is invalid. Please reconnect it.`;
+                    }
+
+                    // Get the resource data (e.g., calendly URL)
+                    const resourceData = await integrationService.getData({
+                        type: input.resourceType
+                    });
+
+                    // Fetch customer
+                    const customer = await CustomerModel.findById(input.customerId).lean();
+                    if (!customer) return "Customer not found.";
+
+                    // Build message
+                    const defaultMessage = this.getDefaultMessageForIntegration(
+                        input.integrationType,
+                        resourceData
+                    );
+                    const messageToSend = input.customMessage || defaultMessage;
+
+                    // Send message
+                    const org = await OrganizationModel.findById(input.organizationId).lean();
+                    if (!org) return "Organization not found.";
+
+                    if (org.whatsappAuthType === 'baileys') {
+                        await baileysManager.sendMessage(input.organizationId, (customer as any).whatsappNumber, messageToSend);
+                    } else {
+                        await this.whatsappService.sendMessage((customer as any).whatsappNumber, messageToSend, input.organizationId);
+                    }
+
+                    // Save message to conversation
+                    await MessageModel.create({
+                        conversationId: input.conversationId,
+                        direction: Direction.OUTBOUND,
+                        type: MessageType.TEXT,
+                        content: messageToSend,
+                        status: MessageStatus.SENT,
+                        isFromAgent: true,
+                        aiGenerated: true,
+                        metadata: {
+                            integration: input.integrationType,
+                            resourceType: input.resourceType
+                        }
+                    } as any);
+
+                    // Update conversation lastMessageAt
+                    await ConversationModel.updateOne(
+                        { _id: input.conversationId },
+                        { $set: { lastMessageAt: new Date() } }
+                    );
+
+                    return `${input.integrationType} resource shared successfully.`;
+                } catch (error) {
+                    console.error('Error sharing integration resource:', error);
+                    throw error;
+                }
+            },
+            {
+                name: "share_integration_resource",
+                description: "Share a resource from a connected integration (e.g., Calendly link, payment link, etc.) with the customer via WhatsApp.",
+                schema: z.object({
+                    customerId: z.string().describe("The customer id."),
+                    organizationId: z.string().describe("The organization id."),
+                    conversationId: z.string().describe("The conversation id to save the message."),
+                    integrationType: z.string().describe("Type of integration (e.g., 'calendly', 'stripe', 'slack')."),
+                    resourceType: z.string().describe("Type of resource to share (e.g., 'calendar_url', 'payment_link')."),
+                    customMessage: z.string().max(4096).optional().describe("Custom message to send with the resource.")
+                })
+            }
+        );
+    }
+
+    /**
+     * Helper to get default messages for different integrations
+     */
+    private getDefaultMessageForIntegration(integrationType: string, resourceData: any): string
+    {
+        const defaults: Record<string, string> = {
+            'calendly': `I'd love to schedule a time to chat! Here's my calendar:\n${resourceData.url}`,
+            'stripe': `You can complete your payment here:\n${resourceData.url}`,
+            'slack': `Join our community Slack:\n${resourceData.url}`,
+        };
+
+        return defaults[integrationType] || `Check this out:\n${JSON.stringify(resourceData)}`;
     }
 }

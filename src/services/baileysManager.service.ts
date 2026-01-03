@@ -91,7 +91,7 @@ export class BaileysManager extends EventEmitter
             // Handle connection updates (single handler that handles everything)
             sock.ev.on('connection.update', async (update) =>
             {
-                console.log(`[Baileys] Connection update event fired:`, JSON.stringify(update, null, 2));
+                // console.log(`[Baileys] Connection update event fired:`, JSON.stringify(update, null, 2));
                 const { connection, isOnline, qr, lastDisconnect } = update;
 
                 // Log online status
@@ -340,13 +340,9 @@ export class BaileysManager extends EventEmitter
         try {
             const { organizationId, from, text, messageId, pushName } = data;
 
-            console.log(`\n[Baileys] ╔════════════════════════════════════════╗`, data);
-
-            console.log(`[Baileys] Processing incoming message for org: ${organizationId}`);
 
             // Extract phone number from JID (e.g., "2348012345678@s.whatsapp.net" -> "2348012345678")
             const whatsappNumber = from.split('@')[ 0 ];
-            console.log(`[Baileys] Extracted WhatsApp number: ${whatsappNumber}`);
 
             // Find or create customer
             let customer = await CustomerModel.findOne({
@@ -359,7 +355,7 @@ export class BaileysManager extends EventEmitter
                 const createdCustomer = await CustomerModel.create({
                     organizationId,
                     whatsappNumber,
-                    name: pushName || 'Unknown'
+                    name: null,
                 } as any);
                 customer = Array.isArray(createdCustomer) ? createdCustomer[ 0 ] : createdCustomer;
                 console.log(`[Baileys] New customer created: ${customer._id}`);
@@ -408,7 +404,6 @@ export class BaileysManager extends EventEmitter
                 aiGenerated: false
             } as any);
             const savedMessageDoc = Array.isArray(createdMsg) ? createdMsg[ 0 ] : createdMsg;
-            console.log(`[Baileys] Message saved to DB: ${(savedMessageDoc as any)._id}`);
 
             // Prepare data for SalesAgent
             const formatMessageForAi = {
@@ -430,6 +425,8 @@ export class BaileysManager extends EventEmitter
                     console.log(`[Baileys] Triggering SalesAgent for conversation: ${conversationId}`);
                     const salesAgent = new SalesAgent();
                     const response = await salesAgent.handleRequest(JSON.stringify(formatMessageForAi));
+
+                    console.log(`[Baileys] SalesAgent response: ${response}`);
                     console.log(`[Baileys] SalesAgent response received`);
                 } catch (error) {
                     console.error('[Baileys] Error handling sales agent request:', error);
@@ -490,14 +487,50 @@ export class BaileysManager extends EventEmitter
     {
         const clientInfo = this.clients.get(organizationId);
         if (clientInfo?.socket) {
-            await clientInfo.socket.logout();
+            try {
+                await clientInfo.socket.logout();
+            } catch (error) {
+                console.log(`[Baileys] Logout error (continuing with cleanup): ${error}`);
+            }
             clientInfo.socket = null;
             clientInfo.isReady = false;
         }
+
+        // Clear heartbeat interval
+        if (clientInfo?.heartbeatInterval) {
+            clearInterval(clientInfo.heartbeatInterval);
+        }
+
         this.clients.delete(organizationId);
+
+        // Delete auth session folder to force fresh QR code on reconnect
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const sessionPath = path.join(process.cwd(), 'auth_sessions', organizationId);
+            if (fs.existsSync(sessionPath)) {
+                fs.rmSync(sessionPath, { recursive: true, force: true });
+                console.log(`[Baileys] Auth session deleted for org: ${organizationId}`);
+            }
+        } catch (error) {
+            console.error(`[Baileys] Error deleting auth session: ${error}`);
+        }
 
         // Update organization status to disconnected
         await this.updateOrganizationConnectionStatus(organizationId, 'disconnected');
+    }
+
+    /**
+     * Remove client without logging out (for cleanup of disconnected clients)
+     */
+    async removeClient(organizationId: string): Promise<void>
+    {
+        const clientInfo = this.clients.get(organizationId);
+        if (clientInfo?.heartbeatInterval) {
+            clearInterval(clientInfo.heartbeatInterval);
+        }
+        this.clients.delete(organizationId);
+        console.log(`[Baileys] Client removed for org: ${organizationId}`);
     }
 
     isClientReady(organizationId: string): boolean

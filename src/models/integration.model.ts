@@ -10,6 +10,8 @@ export interface Integration extends Document<string>
     name: string;
     config: Record<string, unknown>;
     isActive: boolean;
+    lastTestedAt?: Date;
+    testStatus?: 'success' | 'failed';
     createdAt: Date;
     updatedAt: Date;
 }
@@ -21,7 +23,9 @@ const IntegrationSchema = new Schema<any>(
         type: { type: String, enum: Object.values(IntegrationType), required: true },
         name: { type: String, required: true },
         config: { type: Schema.Types.Mixed, default: {} },
-        isActive: { type: Boolean, default: true }
+        isActive: { type: Boolean, default: true },
+        lastTestedAt: { type: Date },
+        testStatus: { type: String, enum: ['success', 'failed'] }
     },
     { timestamps: true }
 );

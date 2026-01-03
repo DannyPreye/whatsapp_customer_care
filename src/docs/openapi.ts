@@ -268,36 +268,52 @@ const definition: OpenAPIV3.Document = {
             UploadDocumentInput: {
                 type: 'object',
                 properties: {
-                    organizationId: { type: 'string', description: 'Organization ID' },
                     name: { type: 'string', description: 'Optional document name, defaults to original filename' },
                     content: { type: 'string', description: 'Optional document content' }
-                },
-                required: [ 'organizationId' ]
+                }
             },
             Integration: {
                 type: 'object',
                 properties: {
                     id: { type: 'string' },
                     organizationId: { type: 'string' },
-                    type: { type: 'string' },
+                    type: { 
+                        type: 'string', 
+                        enum: ['calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom'],
+                        description: 'Type of integration'
+                    },
                     name: { type: 'string' },
-                    config: { type: 'object', additionalProperties: true },
-                    isActive: { type: 'boolean' },
+                    config: { 
+                        type: 'object', 
+                        additionalProperties: true,
+                        description: 'Integration-specific configuration. Required fields vary by type.'
+                    },
+                    isActive: { type: 'boolean', default: true },
+                    lastTestedAt: { type: 'string', format: 'date-time', nullable: true, description: 'Last time the integration was tested' },
+                    testStatus: { type: 'string', enum: ['success', 'failed'], nullable: true, description: 'Status of the last test' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' }
                 },
-                required: [ 'id', 'organizationId', 'type', 'name' ]
+                required: [ 'id', 'organizationId', 'type', 'name', 'config', 'isActive' ]
             },
             CreateIntegrationInput: {
                 type: 'object',
                 properties: {
-                    organizationId: { type: 'string' },
-                    type: { type: 'string' },
-                    name: { type: 'string' },
-                    config: { type: 'object', additionalProperties: true },
-                    isActive: { type: 'boolean' }
+                    organizationId: { type: 'string', description: 'Organization ID' },
+                    type: { 
+                        type: 'string',
+                        enum: ['calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom'],
+                        description: 'Type of integration'
+                    },
+                    name: { type: 'string', description: 'Display name for this integration' },
+                    config: { 
+                        type: 'object', 
+                        additionalProperties: true,
+                        description: 'Integration-specific config. For calendly: {apiKey, calendarUrl}. For stripe: {apiKey, publishableKey}. For slack: {botToken, channelId}.'
+                    },
+                    isActive: { type: 'boolean', default: true, description: 'Whether this integration is active' }
                 },
-                required: [ 'organizationId', 'type', 'name' ]
+                required: [ 'organizationId', 'type', 'name', 'config' ]
             },
             AnalyticsOverview: {
                 type: 'object',
@@ -1208,11 +1224,14 @@ const definition: OpenAPIV3.Document = {
                 }
             }
         },
-        '/api/v1/documents/upload': {
+        '/api/v1/organizations/{organizationId}/documents/upload': {
             post: {
                 tags: [ 'Documents' ],
                 summary: 'Upload document (multipart to Cloudinary)',
                 description: 'Document type is automatically determined from file MIME type. uploadedBy is automatically set to the authenticated user.',
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' }
+                ],
                 requestBody: {
                     required: true,
                     content: {
@@ -1221,11 +1240,10 @@ const definition: OpenAPIV3.Document = {
                                 type: 'object',
                                 properties: {
                                     file: { type: 'string', format: 'binary', description: 'Document file to upload' },
-                                    organizationId: { type: 'string', description: 'Organization ID' },
                                     name: { type: 'string', description: 'Optional document name, defaults to original filename' },
                                     content: { type: 'string', description: 'Optional document content' }
                                 },
-                                required: [ 'file', 'organizationId' ]
+                                required: [ 'file' ]
                             }
                         }
                     }
@@ -1233,46 +1251,64 @@ const definition: OpenAPIV3.Document = {
                 responses: { 201: { description: 'Uploaded', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Document' } } } } } } }
             }
         },
-        '/api/v1/documents': {
+        '/api/v1/organizations/{organizationId}/documents': {
             get: {
                 tags: [ 'Documents' ],
-                summary: 'List documents',
+                summary: 'List documents for organization',
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' }
+                ],
                 responses: { 200: { description: 'List', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Document' } } } } } } } }
             }
         },
-        '/api/v1/documents/{id}': {
+        '/api/v1/organizations/{organizationId}/documents/{id}': {
             get: {
                 tags: [ 'Documents' ],
                 summary: 'Get document',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' },
+                    { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Document ID' }
+                ],
                 responses: { 200: { description: 'Doc', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Document' } } } } } } }
             },
             delete: {
                 tags: [ 'Documents' ],
                 summary: 'Delete document',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' },
+                    { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Document ID' }
+                ],
                 responses: { 204: { description: 'Deleted' } }
             }
         },
-        '/api/v1/documents/{id}/reprocess': {
+        '/api/v1/organizations/{organizationId}/documents/{id}/reprocess': {
             post: {
                 tags: [ 'Documents' ],
                 summary: 'Reprocess document',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' },
+                    { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Document ID' }
+                ],
                 responses: { 200: { description: 'Queued', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Document' } } } } } } }
             }
         },
-        '/api/v1/documents/status': {
+        '/api/v1/organizations/{organizationId}/documents/status': {
             get: {
                 tags: [ 'Documents' ],
-                summary: 'Processing status counts',
+                summary: 'Processing status counts for organization',
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' }
+                ],
                 responses: { 200: { description: 'Status', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', additionalProperties: { type: 'number' } } } } } } } }
             }
         },
-        '/api/v1/documents/bulk-upload': {
+        '/api/v1/organizations/{organizationId}/documents/bulk-upload': {
             post: {
                 tags: [ 'Documents' ],
-                summary: 'Bulk upload documents',
+                summary: 'Bulk upload documents for organization',
+                parameters: [
+                    { name: 'organizationId', in: 'path', required: true, schema: { type: 'string' }, description: 'Organization ID' }
+                ],
                 requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/UploadDocumentInput' } } } } } } },
                 responses: { 201: { description: 'Uploaded', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Document' } } } } } } } }
             }
@@ -1281,42 +1317,83 @@ const definition: OpenAPIV3.Document = {
             get: {
                 tags: [ 'Integrations' ],
                 summary: 'List integrations',
-                responses: { 200: { description: 'List', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Integration' } } } } } } } }
+                description: 'List all integrations, optionally filtered by organizationId and/or type',
+                parameters: [
+                    { 
+                        name: 'organizationId', 
+                        in: 'query', 
+                        required: false, 
+                        schema: { type: 'string' },
+                        description: 'Filter by organization ID'
+                    },
+                    { 
+                        name: 'type', 
+                        in: 'query', 
+                        required: false, 
+                        schema: { type: 'string', enum: ['calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom'] },
+                        description: 'Filter by integration type'
+                    }
+                ],
+                responses: { 200: { description: 'List of integrations', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Integration' } } } } } } } }
             },
             post: {
                 tags: [ 'Integrations' ],
                 summary: 'Create integration',
+                description: 'Create a new integration. Required config fields vary by type.',
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateIntegrationInput' } } } },
-                responses: { 201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } } }
+                responses: { 
+                    201: { description: 'Integration created successfully', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } },
+                    400: { description: 'Bad request - missing required fields or invalid config' }
+                }
             }
         },
         '/api/v1/integrations/{id}': {
             get: {
                 tags: [ 'Integrations' ],
-                summary: 'Get integration',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 200: { description: 'Integration', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } } }
+                summary: 'Get integration by ID',
+                description: 'Retrieve a specific integration by its ID',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
+                responses: { 
+                    200: { description: 'Integration details', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } },
+                    404: { description: 'Integration not found' }
+                }
             },
             put: {
                 tags: [ 'Integrations' ],
                 summary: 'Update integration',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
+                description: 'Update an existing integration. All fields are optional.',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateIntegrationInput' } } } },
-                responses: { 200: { description: 'Updated', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } } }
+                responses: { 
+                    200: { description: 'Integration updated successfully', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } },
+                    400: { description: 'Bad request - invalid config for type' },
+                    404: { description: 'Integration not found' }
+                }
             },
             delete: {
                 tags: [ 'Integrations' ],
                 summary: 'Delete integration',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 204: { description: 'Deleted' } }
+                description: 'Delete an integration permanently',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
+                responses: { 
+                    204: { description: 'Integration deleted successfully' },
+                    404: { description: 'Integration not found' }
+                }
             }
         },
         '/api/v1/integrations/{id}/test': {
             post: {
                 tags: [ 'Integrations' ],
-                summary: 'Test integration',
-                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' } } ],
-                responses: { 200: { description: 'Result', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { success: { type: 'boolean' } } } } } } } } }
+                summary: 'Test integration connection',
+                description: 'Verify that the integration credentials are valid and the connection works. Updates the lastTestedAt and testStatus fields.',
+                parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
+                responses: { 
+                    200: { 
+                        description: 'Test result', 
+                        content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } } } 
+                    },
+                    404: { description: 'Integration not found' }
+                }
             }
         },
         '/api/v1/webhook/whatsapp': {

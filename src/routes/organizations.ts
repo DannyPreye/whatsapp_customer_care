@@ -47,6 +47,7 @@ router.post('/:id/whatsapp/save-config', orgController.saveWhatsAppConfig);
 // WhatsApp Baileys flow
 router.post('/:id/whatsapp/init-baileys', orgController.initBaileysConnection);
 router.get('/:id/whatsapp/qrcode', orgController.getBaileysQRCode);
+router.post('/:id/whatsapp/reconnect', orgController.reconnectBaileys);
 
 // WhatsApp general endpoints
 router.delete('/:id/whatsapp/disconnect', orgController.disconnectWhatsApp);

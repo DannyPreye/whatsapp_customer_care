@@ -252,7 +252,16 @@ export async function initBaileysConnection(req: Request, res: Response)
 
         console.log(`[Controller] Organization found, creating Baileys client...`);
 
-        // Create Baileys client
+        // Check if there's an existing connected client
+        const existingClient = baileysManager.getClient(organizationId);
+        if (existingClient?.isReady) {
+            return res.status(400).json({
+                error: 'WhatsApp is already connected for this organization',
+                message: 'Use the reconnect endpoint if you need to reconnect'
+            });
+        }
+
+        // Create Baileys client (this will remove disconnected clients automatically)
         await orgService.connectWhatsApp(organizationId);
 
         // Update organization to use Baileys auth type
@@ -337,6 +346,55 @@ export async function disconnectWhatsApp(req: Request, res: Response)
 }
 
 /**
+ * Reconnect WhatsApp for disconnected organization
+ */
+export async function reconnectBaileys(req: Request, res: Response)
+{
+    try {
+        const organizationId = req.params.id;
+        const org = await orgService.getOrganizationById(organizationId);
+        if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+        console.log(`[Controller] Reconnecting Baileys for org: ${organizationId}`);
+
+        // Check if already connected
+        const clientInfo = baileysManager.getClient(organizationId);
+        if (clientInfo?.isReady) {
+            return res.status(400).json({ error: 'WhatsApp is already connected' });
+        }
+
+        // Clean up any existing disconnected client
+        if (clientInfo) {
+            await baileysManager.removeClient(organizationId);
+        }
+
+        // Initialize new connection
+        await orgService.connectWhatsApp(organizationId);
+        await orgService.updateOrganizationWhatsAppStatus(organizationId, 'baileys', 'pending');
+
+        // Wait for QR code generation
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const newClientInfo = baileysManager.getClient(organizationId);
+        if (!newClientInfo?.qrCode) {
+            return res.status(202).json({
+                message: 'Reconnection initialized. QR code will be available shortly.',
+                retryIn: 3000
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Reconnection successful. Scan the QR code to reconnect.',
+            qrCode: newClientInfo.qrCode
+        });
+    } catch (error: any) {
+        console.error('[Controller] Reconnect error:', error);
+        return res.status(500).json({ error: error?.message || 'Failed to reconnect' });
+    }
+}
+
+/**
  * Check WhatsApp connection status
  */
 export async function checkWhatsAppStatus(req: Request, res: Response)
@@ -347,13 +405,16 @@ export async function checkWhatsAppStatus(req: Request, res: Response)
         if (!org) return res.status(404).json({ error: 'Organization not found' });
 
         const isDisconnected = baileysManager.isClientDisconnected(organizationId);
+        const clientInfo = baileysManager.getClient(organizationId);
 
         return res.json({
             success: true,
             authType: (org as any).whatsappAuthType || 'oauth',
             connectionStatus: (org as any).whatsappConnectionStatus || 'disconnected',
             isConnected: !isDisconnected,
-            isDisconnected: isDisconnected
+            isDisconnected: isDisconnected,
+            hasQRCode: !!clientInfo?.qrCode,
+            canReconnect: isDisconnected
         });
     } catch (error: any) {
         console.error('checkWhatsAppStatus error', error?.message);

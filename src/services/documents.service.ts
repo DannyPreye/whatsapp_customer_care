@@ -15,14 +15,14 @@ export class DocumentsService
         this.documentProcessorService = new DocumentProcessorService();
         this.vectorStoreService = new VectorStoreService();
     }
-    async list(): Promise<DocumentEntity[]>
+    async list(organizationId: string): Promise<DocumentEntity[]>
     {
-        return DocumentModel.find().lean();
+        return DocumentModel.find({ organizationId }).lean();
     }
 
-    async getById(id: string): Promise<DocumentEntity | null>
+    async getById(id: string, organizationId: string): Promise<DocumentEntity | null>
     {
-        return DocumentModel.findById(id).lean();
+        return DocumentModel.findOne({ _id: id, organizationId }).lean();
     }
 
     async searchKnowledgeBase(
@@ -40,9 +40,9 @@ export class DocumentsService
         );
     }
 
-    async remove(id: string): Promise<boolean>
+    async remove(id: string, organizationId: string): Promise<boolean>
     {
-        const doc = await DocumentModel.findByIdAndDelete(id);
+        const doc = await DocumentModel.findOneAndDelete({ _id: id, organizationId });
         if (!doc) return false;
 
         await this.vectorStoreService.deleteDocument(doc.organizationId, id);
@@ -131,14 +131,21 @@ export class DocumentsService
         return results;
     }
 
-    async reprocess(id: string): Promise<DocumentEntity | null>
+    async reprocess(id: string, organizationId: string): Promise<DocumentEntity | null>
     {
-        return DocumentModel.findByIdAndUpdate(id, { status: ProcessStatus.PENDING, processedAt: undefined }, { new: true }).lean();
+        return DocumentModel.findOneAndUpdate(
+            { _id: id, organizationId },
+            { status: ProcessStatus.PENDING, processedAt: undefined },
+            { new: true }
+        ).lean();
     }
 
-    async status(): Promise<Record<string, number>>
+    async status(organizationId: string): Promise<Record<string, number>>
     {
-        const agg = await DocumentModel.aggregate([ { $group: { _id: '$status', count: { $sum: 1 } } } ]);
+        const agg = await DocumentModel.aggregate([
+            { $match: { organizationId } },
+            { $group: { _id: '$status', count: { $sum: 1 } } }
+        ]);
         const out: Record<string, number> = {};
         for (const row of agg) out[ row._id ] = row.count;
         return out;

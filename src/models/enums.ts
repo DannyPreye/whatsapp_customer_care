@@ -78,12 +78,14 @@ export enum HandoffStatus
 
 export enum IntegrationType
 {
-    CRM = 'CRM',
-    EMAIL = 'EMAIL',
-    SLACK = 'SLACK',
-    WEBHOOK = 'WEBHOOK',
-    ZAPIER = 'ZAPIER',
-    CUSTOM = 'CUSTOM'
+    CALENDLY = 'calendly',
+    STRIPE = 'stripe',
+    SLACK = 'slack',
+    CRM = 'crm',
+    EMAIL = 'email',
+    WEBHOOK = 'webhook',
+    ZAPIER = 'zapier',
+    CUSTOM = 'custom'
 }
 
 export enum NotificationType
