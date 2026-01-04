@@ -460,7 +460,8 @@ ${text}`;
                 integrationType: string;
                 resourceType: string;
                 customMessage?: string;
-            }) => {
+            }) =>
+            {
                 console.log("Sharing integration resource", input);
 
                 try {
@@ -563,6 +564,6 @@ ${text}`;
             'slack': `Join our community Slack:\n${resourceData.url}`,
         };
 
-        return defaults[integrationType] || `Check this out:\n${JSON.stringify(resourceData)}`;
+        return defaults[ integrationType ] || `Check this out:\n${JSON.stringify(resourceData)}`;
     }
 }

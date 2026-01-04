@@ -4,7 +4,7 @@ export abstract class BaseIntegrationService
 {
     protected integration: Integration;
 
-    constructor(integration: Integration)
+    constructor (integration: Integration)
     {
         this.integration = integration;
     }

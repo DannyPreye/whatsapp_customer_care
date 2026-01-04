@@ -33,11 +33,21 @@ export interface AgentEscalationSettings
 
 export interface AgentSettings
 {
+    // Personality
+    agentName?: string;
+    agentGender?: 'male' | 'female' | 'neutral';
+    agentAge?: number;
+    agentAvatar?: string; // URL to avatar image
+    defaultLanguage?: string; // e.g., 'en', 'es', 'fr'
+
+    // Communication
     systemPrompt?: string;
     tone?: 'concise' | 'friendly' | 'formal' | 'playful';
     maxReplyLength?: number; // words
     signature?: string;
     callToAction?: string;
+
+    // Behavior
     escalation?: AgentEscalationSettings;
     followUpEnabled?: boolean;
 }
@@ -59,6 +69,11 @@ const OrganizationSchema = new Schema<any>(
         ownerId: { type: String, required: true, ref: 'User' },
         agentSettings: {
             type: {
+                agentName: { type: String, trim: true },
+                agentGender: { type: String, enum: [ 'male', 'female', 'neutral' ] },
+                agentAge: { type: Number, min: 18, max: 100 },
+                agentAvatar: { type: String },
+                defaultLanguage: { type: String, default: 'en' },
                 systemPrompt: { type: String, trim: true },
                 tone: { type: String, enum: [ 'concise', 'friendly', 'formal', 'playful' ], default: 'concise' },
                 maxReplyLength: { type: Number, default: 120 },
@@ -78,6 +93,7 @@ const OrganizationSchema = new Schema<any>(
                 tone: 'concise',
                 maxReplyLength: 120,
                 followUpEnabled: true,
+                defaultLanguage: 'en',
                 escalation: { enabled: false }
             }
         }

@@ -43,7 +43,7 @@ export class IntegrationsService
         return !!res;
     }
 
-    async test(id: string): Promise<{ success: boolean; message: string } | null>
+    async test(id: string): Promise<{ success: boolean; message: string; } | null>
     {
         const integ = await IntegrationModel.findById(id).lean();
         if (!integ) return null;
@@ -105,14 +105,14 @@ export class IntegrationsService
         }
 
         const requiredFields: Record<string, string[]> = {
-            'calendly': ['apiKey', 'calendarUrl'],
-            'stripe': ['apiKey', 'publishableKey'],
-            'slack': ['botToken', 'channelId'],
-            'crm': ['apiKey'],
-            'email': ['apiKey', 'sender'],
+            'calendly': [ 'apiKey', 'calendarUrl' ],
+            'stripe': [ 'apiKey', 'publishableKey' ],
+            'slack': [ 'botToken', 'channelId' ],
+            'crm': [ 'apiKey' ],
+            'email': [ 'apiKey', 'sender' ],
         };
 
-        const required = requiredFields[type];
+        const required = requiredFields[ type ];
         if (!required) {
             // Allow unknown types but warn
             console.warn(`Unknown integration type: ${type}`);
@@ -120,7 +120,7 @@ export class IntegrationsService
         }
 
         for (const field of required) {
-            if (!config[field]) {
+            if (!config[ field ]) {
                 throw new Error(`Missing required field for ${type}: ${field}`);
             }
         }

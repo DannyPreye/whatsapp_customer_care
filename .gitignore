@@ -31,4 +31,4 @@ Thumbs.db
 
 # Uploads (if used for local storage)
 uploads/
-.auth_sessions/
+auth_sessions/

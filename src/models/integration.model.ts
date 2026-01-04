@@ -25,7 +25,7 @@ const IntegrationSchema = new Schema<any>(
         config: { type: Schema.Types.Mixed, default: {} },
         isActive: { type: Boolean, default: true },
         lastTestedAt: { type: Date },
-        testStatus: { type: String, enum: ['success', 'failed'] }
+        testStatus: { type: String, enum: [ 'success', 'failed' ] }
     },
     { timestamps: true }
 );

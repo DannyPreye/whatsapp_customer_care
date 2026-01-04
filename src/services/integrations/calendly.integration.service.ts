@@ -6,7 +6,7 @@ export class CalendlyIntegrationService extends BaseIntegrationService
 {
     private baseUrl = 'https://api.calendly.com';
 
-    constructor(integration: Integration)
+    constructor (integration: Integration)
     {
         super(integration);
     }
@@ -27,7 +27,7 @@ export class CalendlyIntegrationService extends BaseIntegrationService
         }
     }
 
-    async getData(params: { type: string }): Promise<any>
+    async getData(params: { type: string; }): Promise<any>
     {
         if (params.type === 'calendar_url') {
             return {

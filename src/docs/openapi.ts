@@ -53,7 +53,7 @@ const definition: OpenAPIV3.Document = {
                     isActive: { type: 'boolean' },
                     ownerId: { type: 'string' },
                     settings: { type: 'object', additionalProperties: true },
-                    agentSettings: { $ref: '#/components/schemas/AgentSettings' },
+                    agentSettings: { $ref: '#/components/schemas/AgentSettings', description: 'AI agent personality and behavior settings including name, gender, language, tone, and escalation rules' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' }
                 },
@@ -71,12 +71,17 @@ const definition: OpenAPIV3.Document = {
             AgentSettings: {
                 type: 'object',
                 properties: {
-                    systemPrompt: { type: 'string' },
-                    tone: { type: 'string', enum: [ 'concise', 'friendly', 'formal', 'playful' ] },
-                    maxReplyLength: { type: 'number' },
-                    signature: { type: 'string' },
-                    callToAction: { type: 'string' },
-                    followUpEnabled: { type: 'boolean' },
+                    agentName: { type: 'string', description: 'Display name of the AI agent' },
+                    agentGender: { type: 'string', enum: [ 'male', 'female', 'neutral' ], description: 'Gender of the agent for personalization' },
+                    agentAge: { type: 'number', minimum: 18, maximum: 100, description: 'Age of the agent (for personality context)' },
+                    agentAvatar: { type: 'string', format: 'uri', description: 'URL to agent avatar image' },
+                    defaultLanguage: { type: 'string', default: 'en', description: 'Default language for agent responses (e.g., en, es, fr)' },
+                    systemPrompt: { type: 'string', description: 'System prompt that defines agent behavior and personality' },
+                    tone: { type: 'string', enum: [ 'concise', 'friendly', 'formal', 'playful' ], default: 'concise', description: 'Communication tone of the agent' },
+                    maxReplyLength: { type: 'number', default: 120, description: 'Maximum reply length in words' },
+                    signature: { type: 'string', description: 'Agent signature for messages' },
+                    callToAction: { type: 'string', description: 'Default call to action for agent' },
+                    followUpEnabled: { type: 'boolean', default: true, description: 'Whether follow-ups are enabled' },
                     escalation: { $ref: '#/components/schemas/AgentEscalationSettings' }
                 }
             },
@@ -124,7 +129,7 @@ const definition: OpenAPIV3.Document = {
             CreateOrganizationInput: {
                 type: 'object',
                 properties: {
-                    name: { type: 'string', description: 'Organization name' },
+                    name: { type: 'string', description: 'Organization name (used in agent default settings)' },
                     ownerId: { type: 'string', description: 'User ID of the organization owner' },
                     description: { type: 'string', description: 'Optional organization description' },
                     industry: { type: 'string', description: 'Optional industry type' },
@@ -277,20 +282,20 @@ const definition: OpenAPIV3.Document = {
                 properties: {
                     id: { type: 'string' },
                     organizationId: { type: 'string' },
-                    type: { 
-                        type: 'string', 
-                        enum: ['calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom'],
+                    type: {
+                        type: 'string',
+                        enum: [ 'calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom' ],
                         description: 'Type of integration'
                     },
                     name: { type: 'string' },
-                    config: { 
-                        type: 'object', 
+                    config: {
+                        type: 'object',
                         additionalProperties: true,
                         description: 'Integration-specific configuration. Required fields vary by type.'
                     },
                     isActive: { type: 'boolean', default: true },
                     lastTestedAt: { type: 'string', format: 'date-time', nullable: true, description: 'Last time the integration was tested' },
-                    testStatus: { type: 'string', enum: ['success', 'failed'], nullable: true, description: 'Status of the last test' },
+                    testStatus: { type: 'string', enum: [ 'success', 'failed' ], nullable: true, description: 'Status of the last test' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' }
                 },
@@ -300,14 +305,14 @@ const definition: OpenAPIV3.Document = {
                 type: 'object',
                 properties: {
                     organizationId: { type: 'string', description: 'Organization ID' },
-                    type: { 
+                    type: {
                         type: 'string',
-                        enum: ['calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom'],
+                        enum: [ 'calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom' ],
                         description: 'Type of integration'
                     },
                     name: { type: 'string', description: 'Display name for this integration' },
-                    config: { 
-                        type: 'object', 
+                    config: {
+                        type: 'object',
                         additionalProperties: true,
                         description: 'Integration-specific config. For calendly: {apiKey, calendarUrl}. For stripe: {apiKey, publishableKey}. For slack: {botToken, channelId}.'
                     },
@@ -528,16 +533,17 @@ const definition: OpenAPIV3.Document = {
             get: {
                 tags: [ 'Organizations' ],
                 summary: 'List organizations',
+                description: 'List all organizations with their current settings and agent configuration',
                 responses: {
                     200: {
-                        description: 'List',
+                        description: 'List of organizations',
                         content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Organization' } } } } } }
                     }
                 }
             },
             post: {
                 summary: 'Create organization',
-                description: 'Create a new organization during user registration. WhatsApp fields (whatsappPhoneId, whatsappToken, whatsappBusinessId), website, and agent settings will be added later via dedicated endpoints.',
+                description: 'Create a new organization during user registration. Default agent settings (with neutral personality and friendly tone) are created automatically. WhatsApp connection, agent personality customization, and other settings can be updated later via dedicated endpoints.',
                 tags: [ 'Organizations' ],
                 requestBody: {
                     required: true,
@@ -545,7 +551,7 @@ const definition: OpenAPIV3.Document = {
                 },
                 responses: {
                     201: {
-                        description: 'Created',
+                        description: 'Organization created successfully with default agent settings',
                         content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Organization' } } } } }
                     }
                 }
@@ -585,27 +591,46 @@ const definition: OpenAPIV3.Document = {
             get: {
                 tags: [ 'Organizations' ],
                 summary: 'Get organization agent settings',
-                parameters: [ { in: 'path', name: 'id', required: true, schema: { type: 'string' } } ],
+                description: 'Retrieve agent personality and behavior settings for an organization. Includes name, gender, language, tone, and escalation rules.',
+                parameters: [ { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Organization ID' } ],
                 responses: {
-                    200: { description: 'Agent settings', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AgentSettings' } } } } } },
-                    404: { description: 'Not found' }
+                    200: { description: 'Agent settings retrieved successfully', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AgentSettings' } } } } } },
+                    404: { description: 'Organization not found' }
                 }
             },
             put: {
                 tags: [ 'Organizations' ],
                 summary: 'Update organization agent settings',
-                parameters: [ { in: 'path', name: 'id', required: true, schema: { type: 'string' } } ],
+                description: 'Update agent personality (name, gender, language) and behavior settings. Personality fields allow customization of how the agent presents itself.',
+                parameters: [ { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Organization ID' } ],
                 requestBody: {
                     required: true,
                     content: {
                         'application/json': {
-                            schema: { $ref: '#/components/schemas/AgentSettings' }
+                            schema: { $ref: '#/components/schemas/AgentSettings' },
+                            example: {
+                                agentName: 'Sarah',
+                                agentGender: 'female',
+                                agentAge: 28,
+                                defaultLanguage: 'en',
+                                tone: 'friendly',
+                                systemPrompt: 'You are a helpful sales assistant...',
+                                maxReplyLength: 150,
+                                signature: 'Best regards, Sales Team',
+                                callToAction: 'Ready to help?',
+                                followUpEnabled: true,
+                                escalation: {
+                                    enabled: false,
+                                    rules: [],
+                                    phone: ''
+                                }
+                            }
                         }
                     }
                 },
                 responses: {
-                    200: { description: 'Agent settings updated', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AgentSettings' } } } } } },
-                    404: { description: 'Not found' }
+                    200: { description: 'Agent settings updated successfully', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AgentSettings' } } } } } },
+                    404: { description: 'Organization not found' }
                 }
             }
         },
@@ -1319,18 +1344,18 @@ const definition: OpenAPIV3.Document = {
                 summary: 'List integrations',
                 description: 'List all integrations, optionally filtered by organizationId and/or type',
                 parameters: [
-                    { 
-                        name: 'organizationId', 
-                        in: 'query', 
-                        required: false, 
+                    {
+                        name: 'organizationId',
+                        in: 'query',
+                        required: false,
                         schema: { type: 'string' },
                         description: 'Filter by organization ID'
                     },
-                    { 
-                        name: 'type', 
-                        in: 'query', 
-                        required: false, 
-                        schema: { type: 'string', enum: ['calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom'] },
+                    {
+                        name: 'type',
+                        in: 'query',
+                        required: false,
+                        schema: { type: 'string', enum: [ 'calendly', 'stripe', 'slack', 'crm', 'email', 'webhook', 'zapier', 'custom' ] },
                         description: 'Filter by integration type'
                     }
                 ],
@@ -1341,7 +1366,7 @@ const definition: OpenAPIV3.Document = {
                 summary: 'Create integration',
                 description: 'Create a new integration. Required config fields vary by type.',
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateIntegrationInput' } } } },
-                responses: { 
+                responses: {
                     201: { description: 'Integration created successfully', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } },
                     400: { description: 'Bad request - missing required fields or invalid config' }
                 }
@@ -1353,7 +1378,7 @@ const definition: OpenAPIV3.Document = {
                 summary: 'Get integration by ID',
                 description: 'Retrieve a specific integration by its ID',
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
-                responses: { 
+                responses: {
                     200: { description: 'Integration details', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } },
                     404: { description: 'Integration not found' }
                 }
@@ -1364,7 +1389,7 @@ const definition: OpenAPIV3.Document = {
                 description: 'Update an existing integration. All fields are optional.',
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
                 requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateIntegrationInput' } } } },
-                responses: { 
+                responses: {
                     200: { description: 'Integration updated successfully', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/Integration' } } } } } },
                     400: { description: 'Bad request - invalid config for type' },
                     404: { description: 'Integration not found' }
@@ -1375,7 +1400,7 @@ const definition: OpenAPIV3.Document = {
                 summary: 'Delete integration',
                 description: 'Delete an integration permanently',
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
-                responses: { 
+                responses: {
                     204: { description: 'Integration deleted successfully' },
                     404: { description: 'Integration not found' }
                 }
@@ -1387,10 +1412,10 @@ const definition: OpenAPIV3.Document = {
                 summary: 'Test integration connection',
                 description: 'Verify that the integration credentials are valid and the connection works. Updates the lastTestedAt and testStatus fields.',
                 parameters: [ { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Integration ID' } ],
-                responses: { 
-                    200: { 
-                        description: 'Test result', 
-                        content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } } } 
+                responses: {
+                    200: {
+                        description: 'Test result',
+                        content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } } }
                     },
                     404: { description: 'Integration not found' }
                 }

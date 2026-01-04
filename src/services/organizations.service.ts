@@ -10,6 +10,12 @@ export async function createOrganization(input: Partial<Organization> & { name: 
 {
     // Create default agent settings if not provided
     const defaultAgentSettings: AgentSettings = {
+        // Personality
+        agentName: `${input.name} Assistant`,
+        agentGender: 'neutral',
+        defaultLanguage: 'en',
+
+        // Communication
         systemPrompt: `You are an intelligent sales assistant for ${input.name}. Your mission is to help customers discover the right solutions while building trust and driving meaningful conversations.
 
 Core Responsibilities:
@@ -39,6 +45,8 @@ Remember: Your goal is to be helpful first, salesy second. Build relationships t
         maxReplyLength: 150,
         signature: `Best regards,\n${input.name} Team`,
         callToAction: 'Ready to get started? Let me know how I can help you today!',
+
+        // Behavior
         followUpEnabled: true,
         escalation: {
             enabled: false,
