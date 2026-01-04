@@ -1071,7 +1071,7 @@ const definition: OpenAPIV3.Document = {
             post: {
                 tags: [ 'Customers' ],
                 summary: 'Bulk create customers',
-                description: 'Owner-only: Trigger AI outreach to all new customers (hasStartedConversation=false). Agent crafts message from knowledge base and sends via WhatsApp.',
+                description: 'Owner-only: Create multiple customers at once.',
                 security: [ { bearerAuth: [] } ],
                 requestBody: {
                     required: true,
@@ -1080,8 +1080,41 @@ const definition: OpenAPIV3.Document = {
                             schema: {
                                 type: 'object',
                                 properties: {
-                                    organizationId: { type: 'string' },
-                                    message: { type: 'string', description: 'Optional hint or theme for the outreach message', maxLength: 4096 }
+                                    customers: {
+                                        type: 'array',
+                                        items: { $ref: '#/components/schemas/CreateCustomerInput' },
+                                        minItems: 1,
+                                        description: 'Array of customers to create'
+                                    }
+                                },
+                                required: [ 'customers' ]
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Customer' } } } } } } },
+                    400: { description: 'Bad Request' },
+                    401: { description: 'Unauthorized' },
+                    403: { description: 'Forbidden' }
+                }
+            }
+        },
+        '/api/v1/customers/outreach': {
+            post: {
+                tags: [ 'Customers' ],
+                summary: 'Trigger AI outreach to new customers',
+                description: 'Owner-only: Trigger AI outreach to all new customers (hasStartedConversation=false). The AI agent crafts personalized messages from the organization knowledge base and sends them via WhatsApp.',
+                security: [ { bearerAuth: [] } ],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    organizationId: { type: 'string', description: 'Organization ID to perform outreach for' },
+                                    message: { type: 'string', description: 'Optional hint or theme for the outreach message that the AI will use to craft personalized messages', maxLength: 4096 }
                                 },
                                 required: [ 'organizationId' ]
                             }
@@ -1089,10 +1122,28 @@ const definition: OpenAPIV3.Document = {
                     }
                 },
                 responses: {
-                    200: { description: 'Triggered', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { count: { type: 'integer' } } } } } } } },
+                    200: { 
+                        description: 'Outreach triggered successfully', 
+                        content: { 
+                            'application/json': { 
+                                schema: { 
+                                    type: 'object', 
+                                    properties: { 
+                                        data: { 
+                                            type: 'object', 
+                                            properties: { 
+                                                message: { type: 'string' },
+                                                count: { type: 'integer', description: 'Number of customers reached out to' } 
+                                            } 
+                                        } 
+                                    } 
+                                } 
+                            } 
+                        } 
+                    },
                     400: { description: 'Bad Request' },
                     401: { description: 'Unauthorized' },
-                    403: { description: 'Forbidden' }
+                    403: { description: 'Forbidden - Only organization owners can trigger outreach' }
                 }
             }
         },
@@ -1552,6 +1603,88 @@ const definition: OpenAPIV3.Document = {
                             'text/csv': { schema: { type: 'string' } }
                         }
                     }
+                }
+            }
+        },
+        '/api/v1/followups/pending': {
+            get: {
+                tags: [ 'Followups' ],
+                summary: 'List pending followups',
+                description: 'Get a list of pending followup messages that are scheduled to be sent.',
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: false, schema: { type: 'string' }, description: 'Filter by organization ID' },
+                    { name: 'limit', in: 'query', required: false, schema: { type: 'string', pattern: '^\\d+$' }, description: 'Maximum number of results to return' }
+                ],
+                responses: {
+                    200: {
+                        description: 'List of pending followups',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        data: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                properties: {
+                                                    id: { type: 'string' },
+                                                    conversationId: { type: 'string' },
+                                                    organizationId: { type: 'string' },
+                                                    scheduledFor: { type: 'string', format: 'date-time' },
+                                                    message: { type: 'string' },
+                                                    status: { type: 'string', enum: ['pending', 'sent', 'failed'] }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { description: 'Bad Request' }
+                }
+            }
+        },
+        '/api/v1/followups/sent': {
+            get: {
+                tags: [ 'Followups' ],
+                summary: 'List sent followups',
+                description: 'Get a list of followup messages that have already been sent.',
+                parameters: [
+                    { name: 'organizationId', in: 'query', required: false, schema: { type: 'string' }, description: 'Filter by organization ID' },
+                    { name: 'days', in: 'query', required: false, schema: { type: 'string', pattern: '^\\d+$' }, description: 'Number of days to look back' },
+                    { name: 'limit', in: 'query', required: false, schema: { type: 'string', pattern: '^\\d+$' }, description: 'Maximum number of results to return' }
+                ],
+                responses: {
+                    200: {
+                        description: 'List of sent followups',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        data: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                properties: {
+                                                    id: { type: 'string' },
+                                                    conversationId: { type: 'string' },
+                                                    organizationId: { type: 'string' },
+                                                    scheduledFor: { type: 'string', format: 'date-time' },
+                                                    sentAt: { type: 'string', format: 'date-time' },
+                                                    message: { type: 'string' },
+                                                    status: { type: 'string', enum: ['pending', 'sent', 'failed'] }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: { description: 'Bad Request' }
                 }
             }
         }

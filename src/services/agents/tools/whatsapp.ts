@@ -26,6 +26,188 @@ export class WhatsappToolService
         this.knowledgeBaseService = new VectorStoreService();
     }
 
+    conversationOversightTool()
+    {
+        return tool(
+            async ({
+                conversationId,
+                proposedResponse
+            }: {
+                conversationId: string;
+                proposedResponse: string;
+            }) =>
+            {
+                // Get recent conversation history
+                const recentMessages = await MessageModel.find({ conversationId })
+                    .sort({ createdAt: -1 })
+                    .limit(10)
+                    .lean();
+
+                const userMessages = recentMessages
+                    .filter(m => m.direction === 'INBOUND')
+                    .map(m => m.content.toLowerCase().trim());
+
+                const agentMessages = recentMessages
+                    .filter(m => m.direction === 'OUTBOUND' && m.aiGenerated)
+                    .map(m => m.content.toLowerCase());
+
+                // Analyze patterns
+                const analysis = {
+                    issues: [] as string[],
+                    recommendations: [] as string[],
+                    shouldProceed: true,
+                    confidence: 1.0
+                };
+
+                // Check 1: User giving only short affirmations
+                const affirmations = [ 'yes', 'okay', 'ok', 'okays', 'sure', 'yup', 'yeah' ];
+                const affirmationCount = userMessages
+                    .slice(0, 5)
+                    .filter(msg => affirmations.includes(msg) || msg.length < 5)
+                    .length;
+
+                if (affirmationCount >= 3) {
+                    analysis.issues.push('User providing only short affirmations (3+ in last 5 messages)');
+                    analysis.recommendations.push('Ask ONE direct, specific question to clarify what they need, or politely close the conversation');
+                    analysis.shouldProceed = false;
+                    analysis.confidence = 0.3;
+                }
+
+                // Check 2: Repetitive AI responses
+                const lastThreeAI = agentMessages.slice(0, 3);
+                const repetitivePatterns = [
+                    /i'm curious/i,
+                    /let me know/i,
+                    /😊/,
+                    /feel free/i,
+                    /i'd love to/i
+                ];
+
+                let repetitionScore = 0;
+                for (const pattern of repetitivePatterns) {
+                    const matches = lastThreeAI.filter(msg => pattern.test(msg)).length;
+                    if (matches >= 2) repetitionScore++;
+                }
+
+                if (repetitionScore >= 2) {
+                    analysis.issues.push('Using repetitive phrases in recent responses');
+                    analysis.recommendations.push('Vary your language. Avoid overused phrases like "I\'m curious", "Let me know", and emojis');
+                }
+
+                // Check 3: Asking for same information repeatedly
+                const askedForName = agentMessages.filter(msg =>
+                    /what.*your.*name/i.test(msg) || /share.*name/i.test(msg)
+                ).length;
+
+                if (askedForName >= 2) {
+                    analysis.issues.push('Asked for customer name multiple times');
+                    analysis.recommendations.push('STOP asking for their name. Move on with the conversation');
+                }
+
+                // Check 4: User might be trolling/testing
+                const trollPatterns = [
+                    /count.*million/i,
+                    /start counting/i,
+                    /helheim/i,
+                    /leader.*operation/i
+                ];
+
+                const isTrolling = userMessages.some(msg =>
+                    trollPatterns.some(pattern => pattern.test(msg))
+                );
+
+                if (isTrolling) {
+                    analysis.issues.push('User appears to be testing/trolling the bot');
+                    analysis.recommendations.push('Acknowledge briefly without engaging, then redirect to business topics or close politely');
+                    analysis.shouldProceed = false;
+                    analysis.confidence = 0.2;
+                }
+
+                // Check 5: Conversation loop detected
+                const askingForGoals = agentMessages.filter(msg =>
+                    /what.*looking.*achieve/i.test(msg) ||
+                    /what.*your.*goals/i.test(msg) ||
+                    /what.*business/i.test(msg)
+                ).length;
+
+                if (askingForGoals >= 2) {
+                    analysis.issues.push('Stuck in loop asking about goals/business');
+                    analysis.recommendations.push('STOP asking the same question. Either provide specific examples of what you offer, or close the conversation');
+                }
+
+                // Check 6: Proposed response quality
+                if (proposedResponse) {
+                    const responseLength = proposedResponse.split(' ').length;
+
+                    if (responseLength > 100 && analysis.issues.length > 0) {
+                        analysis.recommendations.push('Keep response under 50 words given the issues detected');
+                    }
+
+                    // Check if proposed response would repeat issues
+                    if (/(i'm curious|let me know|feel free|i'd love to|😊)/i.test(proposedResponse)) {
+                        analysis.issues.push('Proposed response contains overused phrases');
+                        analysis.recommendations.push('Remove clichés like "I\'m curious", "Let me know", emojis, etc.');
+                    }
+
+                    if (/what.*your.*name/i.test(proposedResponse) && askedForName > 0) {
+                        analysis.issues.push('About to ask for name again');
+                        analysis.recommendations.push('DO NOT ask for name again - you\'ve already asked');
+                        analysis.shouldProceed = false;
+                    }
+                }
+
+                // Generate action recommendation
+                let action = 'proceed';
+                if (affirmationCount >= 4) {
+                    action = 'close_conversation';
+                } else if (affirmationCount >= 3 || askingForGoals >= 2) {
+                    action = 'final_attempt';
+                } else if (isTrolling) {
+                    action = 'brief_redirect';
+                }
+
+                return JSON.stringify({
+                    conversationHealth: analysis.confidence > 0.6 ? 'healthy' : 'poor',
+                    issues: analysis.issues,
+                    recommendations: analysis.recommendations,
+                    suggestedAction: action,
+                    shouldProceed: analysis.shouldProceed,
+                    confidence: analysis.confidence,
+                    summary: analysis.issues.length === 0
+                        ? 'Conversation quality is good. Proceed normally.'
+                        : `${analysis.issues.length} issue(s) detected. ${analysis.recommendations.join(' ')}`
+                }, null, 2);
+            },
+            {
+                name: "check_conversation_quality",
+                description: `
+CRITICAL SELF-OVERSIGHT TOOL: Call this BEFORE generating any response to check conversation quality.
+
+This tool analyzes:
+- Whether user is genuinely engaged or just saying "yes" repeatedly
+- If you're being repetitive in your responses
+- If you're stuck in a conversation loop
+- If user might be testing/trolling
+
+Returns:
+- Issues detected in the conversation
+- Specific recommendations for how to respond
+- Whether you should proceed with normal response or close conversation
+
+YOU MUST CALL THIS TOOL FIRST before every response. It prevents you from:
+- Sounding robotic and repetitive
+- Asking same questions multiple times
+- Continuing conversations with disengaged users
+- Using overused phrases like "I'm curious", "Let me know", "😊"
+        `.trim(),
+                schema: z.object({
+                    conversationId: z.string().describe("The conversation ID to analyze"),
+                    proposedResponse: z.string().optional().describe("Your planned response (if you have one drafted)")
+                })
+            }
+        );
+    }
+
     sendMessageTool()
     {
         return tool(

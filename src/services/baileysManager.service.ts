@@ -17,6 +17,17 @@ import { MessageModel } from '../models/message.model';
 import { Direction, MessageType, MessageStatus } from '../models/enums';
 import { SalesAgent } from './agents/salesAgenet.agent';
 
+interface QueuedMessage
+{
+    organizationId: string;
+    from: string;
+    text: string;
+    messageId: string;
+    timestamp: number;
+    messageType: string;
+    pushName: string;
+}
+
 interface BaileysClientInfo
 {
     socket: WASocket | null;
@@ -24,6 +35,8 @@ interface BaileysClientInfo
     qrCode?: string;
     retryCount: number;
     heartbeatInterval?: NodeJS.Timeout;
+    messageQueue: QueuedMessage[];
+    isProcessingQueue: boolean;
 }
 
 export class BaileysManager extends EventEmitter
@@ -42,7 +55,9 @@ export class BaileysManager extends EventEmitter
             socket: null,
             isReady: false,
             qrCode: undefined,
-            retryCount: 0
+            retryCount: 0,
+            messageQueue: [],
+            isProcessingQueue: false
         };
 
         this.clients.set(organizationId, clientInfo);
@@ -297,8 +312,8 @@ export class BaileysManager extends EventEmitter
                 console.log(`[Baileys] → MessageId: ${msg.key.id}`);
                 console.log(`[Baileys] ─────────────────────────────────\n`);
 
-                // Process message
-                await this.processIncomingMessage({
+                // Add message to queue instead of processing immediately
+                const queuedMessage: QueuedMessage = {
                     organizationId,
                     from: msg.key.remoteJidAlt,
                     text,
@@ -306,7 +321,16 @@ export class BaileysManager extends EventEmitter
                     timestamp: msg.messageTimestamp,
                     messageType,
                     pushName: msg.pushName || 'Unknown'
-                });
+                };
+
+                clientInfo.messageQueue.push(queuedMessage);
+                console.log(`[Baileys] 📥 Message added to queue. Queue size: ${clientInfo.messageQueue.length}`);
+
+                // Start processing queue if not already processing
+                if (!clientInfo.isProcessingQueue) {
+                    console.log(`[Baileys] 🚀 Starting queue processor`);
+                    this.processMessageQueue(organizationId);
+                }
 
                 // Emit message event for other listeners
                 this.emit('message', {
@@ -322,6 +346,42 @@ export class BaileysManager extends EventEmitter
                 console.error(`[Baileys] Error processing individual message:`, msgError);
             }
         }
+    }
+
+    /**
+     * Process messages from queue sequentially to avoid race conditions
+     */
+    private async processMessageQueue(organizationId: string): Promise<void>
+    {
+        const clientInfo = this.clients.get(organizationId);
+        if (!clientInfo) {
+            console.log(`[Baileys] ❌ Client info not found for queue processing: ${organizationId}`);
+            return;
+        }
+
+        // Mark as processing
+        clientInfo.isProcessingQueue = true;
+
+        while (clientInfo.messageQueue.length > 0) {
+            const message = clientInfo.messageQueue.shift(); // Get first message from queue
+            if (!message) break;
+
+            try {
+                console.log(`[Baileys] 🔄 Processing queued message ${message.messageId}`);
+                console.log(`[Baileys] 📊 Remaining in queue: ${clientInfo.messageQueue.length}`);
+
+                await this.processIncomingMessage(message);
+
+                console.log(`[Baileys] ✅ Message ${message.messageId} processed successfully`);
+            } catch (error) {
+                console.error(`[Baileys] ❌ Error processing queued message ${message.messageId}:`, error);
+                // Continue processing other messages even if one fails
+            }
+        }
+
+        // Mark as done processing
+        clientInfo.isProcessingQueue = false;
+        console.log(`[Baileys] 🏁 Queue processing complete for ${organizationId}`);
     }
 
     /**
@@ -494,6 +554,9 @@ export class BaileysManager extends EventEmitter
             }
             clientInfo.socket = null;
             clientInfo.isReady = false;
+            // Clear message queue
+            clientInfo.messageQueue = [];
+            clientInfo.isProcessingQueue = false;
         }
 
         // Clear heartbeat interval
@@ -526,8 +589,14 @@ export class BaileysManager extends EventEmitter
     async removeClient(organizationId: string): Promise<void>
     {
         const clientInfo = this.clients.get(organizationId);
-        if (clientInfo?.heartbeatInterval) {
-            clearInterval(clientInfo.heartbeatInterval);
+        if (clientInfo) {
+            // Clear heartbeat interval
+            if (clientInfo.heartbeatInterval) {
+                clearInterval(clientInfo.heartbeatInterval);
+            }
+            // Clear message queue
+            clientInfo.messageQueue = [];
+            clientInfo.isProcessingQueue = false;
         }
         this.clients.delete(organizationId);
         console.log(`[Baileys] Client removed for org: ${organizationId}`);
